@@ -1,10 +1,12 @@
 import json
 import frappe
 
-from frappe.utils import getdate, today
+from frappe import _
+from frappe.utils import flt, getdate, today
 
 from hrms.hr.doctype.leave_application.leave_application import (
     get_leave_balance_on,
+    get_leave_details,
     get_number_of_leave_days,
 )
 
@@ -639,71 +641,7 @@ def handle_button(doc, phone, button_id):
 
             return
 
-        # ----------------------------------------------------
-        # Get submitted allocations
-        # ----------------------------------------------------
-
-        allocations = frappe.get_all(
-            "Leave Allocation",
-            filters={
-                "employee": employee,
-                "docstatus": 1
-            },
-            fields=[
-                "name",
-                "leave_type",
-                "from_date",
-                "to_date"
-            ],
-            order_by="leave_type asc"
-        )
-
-        if not allocations:
-
-            send_text(
-                doc,
-                "No leave allocation was found for your employee record."
-            )
-
-            return
-
-        message = "📊 Your Leave Balance\n\n"
-
-        processed_leave_types = set()
-
-        for allocation in allocations:
-
-            leave_type = allocation.leave_type
-
-            if leave_type in processed_leave_types:
-                continue
-
-            processed_leave_types.add(leave_type)
-
-            try:
-
-                balance_data = get_leave_balance_on(
-                    employee,
-                    leave_type,
-                    getdate(today()),
-                    consider_all_leaves_in_the_allocation_period=True,
-                    for_consumption=True,
-                )
-
-                balance = (
-                    balance_data.get(
-                        "leave_balance_for_consumption"
-                    )
-                    or 0
-                )
-
-            except Exception:
-
-                balance = 0
-
-            message += (
-                f"{leave_type}: {balance}\n"
-            )
+        message = build_leave_balance_message(employee)
 
         send_text(
             doc,
@@ -782,6 +720,257 @@ def handle_button(doc, phone, button_id):
         "I couldn't understand that option.\n\n"
         "Please type *Hii* to open the main menu."
     )
+
+
+# ============================================================
+# LEAVE BALANCE
+# ============================================================
+
+def build_leave_balance_message(employee):
+    """Build the '📊 Your Leave Balance' summary for an employee.
+
+    Every number comes from ERPNext / HRMS itself via
+    ``get_leave_details`` - the exact same source the Leave
+    Application form uses for its allocation dashboard
+    (Allocated / Taken / Pending Approval / Available).
+    Nothing is hard-coded.
+    """
+
+    on_date = getdate(today())
+
+    # --------------------------------------------------------
+    # ERPNext's leave APIs enforce ``validate_leave_access``.
+    # The WhatsApp webhook runs as the *Guest* user, so the call
+    # would raise PermissionError (previously swallowed -> 0).
+    # Elevate to a permitted user for this read-only lookup and
+    # restore the original user afterwards.
+    # --------------------------------------------------------
+
+    original_user = frappe.session.user
+
+    try:
+
+        frappe.set_user("Administrator")
+
+        details = get_leave_details(employee, on_date) or {}
+
+    except Exception:
+
+        frappe.log_error(
+            frappe.get_traceback(),
+            "WhatsApp HR Bot - Leave Balance Error",
+        )
+
+        details = {}
+
+    finally:
+
+        frappe.set_user(original_user)
+
+    allocation = details.get("leave_allocation") or {}
+
+    if not allocation:
+
+        return (
+            "No leave allocation was found for your employee record."
+        )
+
+    lines = []
+
+    for leave_type in sorted(allocation.keys()):
+
+        row = allocation.get(leave_type) or {}
+
+        total = flt(row.get("total_leaves"))
+        taken = flt(row.get("leaves_taken"))
+        pending = flt(row.get("leaves_pending_approval"))
+        expired = flt(row.get("expired_leaves"))
+        remaining = flt(row.get("remaining_leaves"))
+
+        # Available = what the employee can still apply for.
+        # Approved leaves already reduce ERPNext's `remaining`;
+        # `pending` (applied but not yet approved) is subtracted
+        # here so a just-submitted request is reflected at once.
+        available = remaining - pending
+
+        _log_leave_balance_debug(
+            employee,
+            leave_type,
+            total,
+            taken,
+            pending,
+            expired,
+            remaining,
+            available,
+        )
+
+        line = f"{leave_type}: {available:g} days"
+
+        breakdown = [f"allocated {total:g}"]
+
+        if taken:
+            breakdown.append(f"approved {taken:g}")
+
+        if pending:
+            breakdown.append(f"pending {pending:g}")
+
+        if expired:
+            breakdown.append(f"expired {expired:g}")
+
+        if len(breakdown) > 1:
+            line += "\n   (" + ", ".join(breakdown) + ")"
+
+        lines.append(line)
+
+    return "📊 Your Leave Balance\n\n" + "\n".join(lines)
+
+
+def _log_leave_balance_debug(
+    employee,
+    leave_type,
+    total,
+    taken,
+    pending,
+    expired,
+    remaining,
+    available,
+):
+    """TEMPORARY server-side debug logging for leave balance.
+
+    Writes to sites/<site>/logs/whatsapp_hr_bot.log only - these
+    details are never sent to the WhatsApp user. Remove once the
+    balance feature is verified in production.
+    """
+
+    # Frappe's default log level is WARNING, so force INFO.
+    debug_logger = frappe.logger("whatsapp_hr_bot")
+    debug_logger.setLevel("INFO")
+
+    leave_applications = frappe.get_all(
+        "Leave Application",
+        filters={
+            "employee": employee,
+            "leave_type": leave_type,
+        },
+        fields=[
+            "name",
+            "status",
+            "docstatus",
+            "from_date",
+            "to_date",
+            "total_leave_days",
+        ],
+        order_by="from_date asc",
+    )
+
+    debug_logger.info(
+        "LEAVE BALANCE DEBUG | "
+        f"Employee={employee} | "
+        f"Leave Type={leave_type} | "
+        f"Allocation Found=True | "
+        f"Total Leaves Allocated={total:g} | "
+        f"Leave Applications Found={len(leave_applications)} "
+        f"{[(a['name'], a['status'], a['total_leave_days']) for a in leave_applications]} | "
+        f"Used Leave Days (approved={taken:g}, pending={pending:g}, expired={expired:g}) | "
+        f"Remaining per ERPNext={remaining:g} | "
+        f"Final Calculated Balance={available:g}"
+    )
+
+
+# ============================================================
+# LEAVE STATUS NOTIFICATION (Leave Application form button)
+# ============================================================
+
+@frappe.whitelist()
+def notify_leave_status(leave_application):
+    """Send the employee a WhatsApp message with the approval /
+    rejection outcome of a Leave Application, followed by their
+    updated leave balance.
+
+    Called from the 'Notify Employee on WhatsApp' button on the
+    Leave Application form (public/js/leave_application.js).
+    """
+
+    la = frappe.get_doc("Leave Application", leave_application)
+
+    if la.docstatus != 1 or la.status not in ("Approved", "Rejected"):
+
+        frappe.throw(
+            _(
+                "Notify the employee only after the Leave Application "
+                "is approved or rejected."
+            )
+        )
+
+    number = _get_employee_whatsapp_number(la.employee)
+
+    if not number:
+
+        frappe.throw(
+            _(
+                "No mobile number found on Employee {0}. "
+                "Add a Mobile Number and try again."
+            ).format(la.employee)
+        )
+
+    if la.status == "Approved":
+
+        heading = "✅ Your leave request has been *approved*."
+
+    else:
+
+        heading = "❌ Your leave request has been *rejected*."
+
+    # get the updated balance in an authorised context
+    balance_message = build_leave_balance_message(la.employee)
+
+    message = (
+        f"{heading}\n\n"
+        f"Request: {la.name}\n"
+        f"Leave Type: {la.leave_type}\n"
+        f"From: {la.from_date}\n"
+        f"To: {la.to_date}\n"
+        f"Days: {flt(la.total_leave_days):g}\n\n"
+        f"{balance_message}"
+    )
+
+    frappe.get_doc(
+        {
+            "doctype": "WhatsApp Message",
+            "type": "Outgoing",
+            "to": number,
+            "message": message,
+            "content_type": "text",
+            "reference_doctype": "Leave Application",
+            "reference_name": la.name,
+        }
+    ).insert(ignore_permissions=True)
+
+    return _("WhatsApp notification sent to {0}.").format(number)
+
+
+def _get_employee_whatsapp_number(employee):
+    """Resolve a WhatsApp-capable number for an employee:
+    Employee.cell_number first, then the linked User's mobile/phone.
+    """
+
+    cell = frappe.db.get_value("Employee", employee, "cell_number")
+
+    if cell:
+        return str(cell).strip()
+
+    user_id = frappe.db.get_value("Employee", employee, "user_id")
+
+    if user_id:
+
+        for field in ("mobile_no", "phone"):
+
+            value = frappe.db.get_value("User", user_id, field)
+
+            if value:
+                return str(value).strip()
+
+    return None
 
 
 # ============================================================
@@ -1123,7 +1312,19 @@ def process_confirmation(doc, phone, button_id):
     if button_id != "confirm_leave":
         return
 
+    # --------------------------------------------------------
+    # ERPNext's leave APIs (get_leave_balance_on, and the Leave
+    # Application controller's own validate()) enforce
+    # ``validate_leave_access``, which rejects the *Guest* user
+    # that the WhatsApp webhook runs as. Elevate to a permitted
+    # user for the whole create flow and restore afterwards.
+    # --------------------------------------------------------
+
+    original_user = frappe.session.user
+
     try:
+
+        frappe.set_user("Administrator")
 
         employee = state.get("employee")
 
@@ -1301,6 +1502,30 @@ def process_confirmation(doc, phone, button_id):
 
         send_main_menu(doc)
 
+    except frappe.ValidationError as exc:
+
+        # ERPNext rejected the request (e.g. max continuous days,
+        # overlap, insufficient balance). Show its actual reason
+        # instead of a generic failure so the user can fix it.
+
+        frappe.log_error(
+            frappe.get_traceback(),
+            "WhatsApp HR Bot - Leave Application Error"
+        )
+
+        reason = (
+            frappe.utils.strip_html(str(exc)).strip()
+            or "Your request could not be validated by HRMS."
+        )
+
+        send_text(
+            doc,
+            "❌ Your leave request could not be created.\n\n"
+            f"{reason}\n\n"
+            "Please adjust the details and try again, "
+            "or type *Hii* to restart."
+        )
+
     except Exception:
 
         frappe.log_error(
@@ -1314,6 +1539,10 @@ def process_confirmation(doc, phone, button_id):
             "Your information has not been cleared.\n"
             "Please try confirming again or type *Hii* to restart."
         )
+
+    finally:
+
+        frappe.set_user(original_user)
 
 
 # ============================================================
