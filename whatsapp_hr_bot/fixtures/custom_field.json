@@ -1,0 +1,75 @@
+[
+ {
+  "doctype": "Custom Field",
+  "name": "WhatsApp Message-custom_notification_event",
+  "dt": "WhatsApp Message",
+  "fieldname": "custom_notification_event",
+  "label": "Notification Event",
+  "fieldtype": "Data",
+  "insert_after": "status",
+  "read_only": 1,
+  "no_copy": 1,
+  "in_standard_filter": 1,
+  "description": "Which configured rule/outcome sent this message, e.g. \"submitted\", \"approved\"."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "WhatsApp Message-custom_recipient_doctype",
+  "dt": "WhatsApp Message",
+  "fieldname": "custom_recipient_doctype",
+  "label": "Recipient DocType",
+  "fieldtype": "Link",
+  "options": "DocType",
+  "insert_after": "custom_notification_event",
+  "read_only": 1,
+  "no_copy": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "WhatsApp Message-custom_recipient",
+  "dt": "WhatsApp Message",
+  "fieldname": "custom_recipient",
+  "label": "Recipient",
+  "fieldtype": "Dynamic Link",
+  "options": "custom_recipient_doctype",
+  "insert_after": "custom_recipient_doctype",
+  "read_only": 1,
+  "no_copy": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "WhatsApp Message-custom_recipient_name",
+  "dt": "WhatsApp Message",
+  "fieldname": "custom_recipient_name",
+  "label": "Recipient Name",
+  "fieldtype": "Data",
+  "insert_after": "custom_recipient",
+  "read_only": 1,
+  "no_copy": 1,
+  "in_list_view": 1,
+  "in_standard_filter": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "WhatsApp Message-custom_sent_at",
+  "dt": "WhatsApp Message",
+  "fieldname": "custom_sent_at",
+  "label": "Sent At",
+  "fieldtype": "Datetime",
+  "insert_after": "custom_recipient_name",
+  "read_only": 1,
+  "no_copy": 1,
+  "in_list_view": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "WhatsApp Message-custom_error",
+  "dt": "WhatsApp Message",
+  "fieldname": "custom_error",
+  "label": "Error / Response",
+  "fieldtype": "Small Text",
+  "insert_after": "custom_sent_at",
+  "read_only": 1,
+  "no_copy": 1
+ }
+]

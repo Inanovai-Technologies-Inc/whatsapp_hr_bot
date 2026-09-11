@@ -26,7 +26,9 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/whatsapp_hr_bot/css/whatsapp_hr_bot.css"
-# app_include_js = "/assets/whatsapp_hr_bot/js/whatsapp_hr_bot.js"
+# Shared client-side helper for the generic "Send WhatsApp" buttons
+# (notify/config.py + notify/engine.py) - unrelated to the leave bot.
+app_include_js = "/assets/whatsapp_hr_bot/js/send_whatsapp.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/whatsapp_hr_bot/css/whatsapp_hr_bot.css"
@@ -43,7 +45,18 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {"Leave Application": "public/js/leave_application.js"}
+doctype_js = {
+    "Leave Application": "public/js/leave_application.js",
+    # Generic "Send WhatsApp" button (notify/config.py) - independent
+    # of the leave-bot entry above.
+    "Purchase Order": "public/js/purchase_order.js",
+    "Sales Order": "public/js/sales_order.js",
+    "Expense Claim": "public/js/expense_claim.js",
+    "Purchase Receipt": "public/js/purchase_receipt.js",
+    "Delivery Note": "public/js/delivery_note.js",
+    "Sales Invoice": "public/js/sales_invoice.js",
+    "Payment Entry": "public/js/payment_entry.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -253,8 +266,42 @@ doctype_js = {"Leave Application": "public/js/leave_application.js"}
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+# Additive Custom Fields on the existing `WhatsApp Message` doctype
+# (frappe_whatsapp) so it can double as a full per-document notification
+# log for notify/config.py's rules: recipient, recipient name, which
+# notification fired, when it was sent, and the error/response on
+# failure. Unrelated to the leave-bot's own use of WhatsApp Message.
+fixtures = [
+    {"doctype": "Custom Field", "filters": [["dt", "=", "WhatsApp Message"], ["fieldname", "like", "custom_%"]]},
+]
+
 doc_events = {
     "WhatsApp Message": {
         "after_insert": "whatsapp_hr_bot.whatsapp_handler.handle_whatsapp_message"
-    }
+    },
+    # Generic WhatsApp notifications (notify/config.py, notify/engine.py) -
+    # every configured DocType/event routes to the same handler; add a
+    # new DocType by adding a rule in notify/config.py and a line here.
+    "Purchase Order": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+    "Sales Order": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+    "Expense Claim": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+        "on_update_after_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+    "Purchase Receipt": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+    "Delivery Note": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+    "Sales Invoice": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+    "Payment Entry": {
+        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
 }
