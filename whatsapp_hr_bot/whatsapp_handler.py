@@ -21,6 +21,21 @@ PROCESSED_PREFIX = "whatsapp_hr_bot:processed:"
 SESSION_TIMEOUT = 1800
 PROCESSED_TIMEOUT = 3600
 
+# Text that opens the leave flow without going through "Hii" first,
+# mirroring ONBOARDING_KEYWORDS in onboarding.py. Matched on the whole
+# normalised message, so "leave balance" is not caught by "leave".
+
+LEAVE_KEYWORDS = [
+    "leave",
+    "apply leave",
+    "apply_leave",
+    "apply for leave",
+    "leave apply",
+    "leave application",
+    "take leave",
+    "new leave",
+]
+
 
 # ============================================================
 # MAIN WHATSAPP MESSAGE HANDLER
@@ -135,12 +150,70 @@ def handle_whatsapp_message(doc, method=None):
         return
 
     # --------------------------------------------------------
+    # Onboarding keywords
+    #
+    # These open the onboarding menu directly, without the
+    # employee having to type *Hii* first. Handled before the
+    # state check (like the greeting above) so they also work
+    # as an escape hatch out of a stale session.
+    # --------------------------------------------------------
+
+    from whatsapp_hr_bot import onboarding
+
+    if onboarding.is_onboarding_keyword(text):
+
+        clear_state(phone)
+
+        onboarding.handle_onboarding_message(
+            doc,
+            phone,
+            onboarding.BUTTON_MY_ONBOARDING
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Leave keywords
+    #
+    # Same shortcut for the leave flow: typing *leave* or
+    # *apply leave* starts it straight away instead of making
+    # the employee restart with *Hii*. Reuses the existing
+    # apply_leave handler rather than repeating its logic.
+    # --------------------------------------------------------
+
+    if is_leave_keyword(text):
+
+        clear_state(phone)
+
+        handle_button(
+            doc,
+            phone,
+            "apply_leave"
+        )
+
+        return
+
+    # --------------------------------------------------------
     # Existing conversation
     # --------------------------------------------------------
 
     state = get_state(phone)
 
     if state:
+
+        # Leave sessions carry no "flow" key (and now carry
+        # "leave"), so they keep routing to handle_leave_flow
+        # exactly as before.
+
+        if state.get("flow") == onboarding.ONBOARDING_FLOW:
+
+            onboarding.handle_onboarding_message(
+                doc,
+                phone,
+                message
+            )
+
+            return
 
         handle_leave_flow(
             doc,
@@ -428,7 +501,22 @@ def is_valid_button_id(value):
     if value.startswith("leave_type:"):
         return True
 
+    from whatsapp_hr_bot import onboarding
+
+    if onboarding.is_onboarding_button_id(value):
+        return True
+
     return False
+
+
+# ============================================================
+# LEAVE KEYWORDS
+# ============================================================
+
+def is_leave_keyword(text):
+    """``text`` is expected to be normalised by ``normalize_text``."""
+
+    return text in LEAVE_KEYWORDS
 
 
 # ============================================================
@@ -479,6 +567,17 @@ def find_leave_type_from_message(message):
 
 def send_main_menu(doc):
 
+    # With more than 3 options frappe_whatsapp renders this as a
+    # WhatsApp *list* message instead of reply buttons (see
+    # WhatsAppMessage.send -> content_type == "interactive"), so the
+    # same helper covers both. Descriptions are filled in because
+    # list rows go out with a "description" key either way.
+    #
+    # The button *ids* are unchanged - only the titles gained emoji -
+    # so every existing leave handler keeps matching.
+
+    from whatsapp_hr_bot import onboarding
+
     send_interactive(
         doc,
         "Hello 👋\n\n"
@@ -487,15 +586,23 @@ def send_main_menu(doc):
         [
             {
                 "id": "apply_leave",
-                "title": "Apply Leave"
+                "title": "📝 Apply Leave",
+                "description": "Submit a new leave request"
             },
             {
                 "id": "leave_balance",
-                "title": "Leave Balance"
+                "title": "📊 Leave Balance",
+                "description": "See your available leave"
             },
             {
                 "id": "my_requests",
-                "title": "My Requests"
+                "title": "📋 My Leave Requests",
+                "description": "Your recent leave applications"
+            },
+            {
+                "id": onboarding.BUTTON_MY_ONBOARDING,
+                "title": "👤 My Onboarding",
+                "description": "Checklist, progress and pending tasks"
             }
         ]
     )
@@ -514,6 +621,22 @@ def handle_button(doc, phone, button_id):
     frappe.logger().info(
         f"WhatsApp HR Bot button received: {button_id}"
     )
+
+    # ========================================================
+    # ONBOARDING
+    # ========================================================
+
+    from whatsapp_hr_bot import onboarding
+
+    if onboarding.is_onboarding_button_id(button_id):
+
+        onboarding.handle_onboarding_message(
+            doc,
+            phone,
+            button_id
+        )
+
+        return
 
     # ========================================================
     # APPLY LEAVE
@@ -569,6 +692,10 @@ def handle_button(doc, phone, button_id):
         set_state(
             phone,
             {
+                # Tags this session as the leave flow so it is never
+                # confused with an onboarding session (handle_whatsapp_
+                # message routes on "flow"). Leave steps are unchanged.
+                "flow": "leave",
                 "employee": employee,
                 "step": "leave_type"
             }
