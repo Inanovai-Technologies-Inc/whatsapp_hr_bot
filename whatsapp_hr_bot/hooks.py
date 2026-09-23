@@ -273,6 +273,7 @@ doctype_js = {
 # failure. Unrelated to the leave-bot's own use of WhatsApp Message.
 fixtures = [
     {"doctype": "Custom Field", "filters": [["dt", "=", "WhatsApp Message"], ["fieldname", "like", "custom_%"]]},
+    {"doctype": "Custom Field", "filters": [["dt", "=", "Employee"], ["fieldname", "like", "custom_whatsapp_%"]]},
 ]
 
 doc_events = {

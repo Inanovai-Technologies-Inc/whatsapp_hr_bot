@@ -224,6 +224,22 @@ def handle_whatsapp_message(doc, method=None):
         return
 
     # --------------------------------------------------------
+    # Onboarding task status update
+    #
+    # "<activity> : <status>" also works with no session open,
+    # so an employee can answer an onboarding reminder straight
+    # away instead of walking the menu first. Only a message
+    # that parses as a status update is taken here - anything
+    # else falls through to the prompt below.
+    #
+    # Checked after the state block above, so a leave session in
+    # progress keeps routing to handle_leave_flow untouched.
+    # --------------------------------------------------------
+
+    if onboarding.handle_status_update(doc, phone, message):
+        return
+
+    # --------------------------------------------------------
     # No active conversation
     # --------------------------------------------------------
 
@@ -578,34 +594,73 @@ def send_main_menu(doc):
 
     from whatsapp_hr_bot import onboarding
 
+    employee = get_employee(doc.get("from"))
+    menu_options = get_whatsapp_menu_options(employee, onboarding)
+
+    if not menu_options:
+        send_text(
+            doc,
+            "No WhatsApp options are enabled for your employee profile. "
+            "Please contact HR."
+        )
+        return
+
     send_interactive(
         doc,
         "Hello 👋\n\n"
         "How can I help you?\n\n"
         "Please select an option:",
-        [
-            {
-                "id": "apply_leave",
-                "title": "📝 Apply Leave",
-                "description": "Submit a new leave request"
-            },
-            {
-                "id": "leave_balance",
-                "title": "📊 Leave Balance",
-                "description": "See your available leave"
-            },
-            {
-                "id": "my_requests",
-                "title": "📋 My Leave Requests",
-                "description": "Your recent leave applications"
-            },
-            {
-                "id": onboarding.BUTTON_MY_ONBOARDING,
-                "title": "👤 My Onboarding",
-                "description": "Checklist, progress and pending tasks"
-            }
-        ]
+        menu_options
     )
+
+
+def get_whatsapp_menu_options(employee, onboarding):
+
+    options = [
+        {
+            "id": "apply_leave",
+            "title": "📝 Apply Leave",
+            "description": "Submit a new leave request",
+            "preference": "custom_whatsapp_apply_leave",
+        },
+        {
+            "id": "leave_balance",
+            "title": "📊 Leave Balance",
+            "description": "See your available leave",
+            "preference": "custom_whatsapp_leave_balance",
+        },
+        {
+            "id": "my_requests",
+            "title": "📋 My Leave Requests",
+            "description": "Your recent leave applications",
+            "preference": "custom_whatsapp_my_requests",
+        },
+        {
+            "id": onboarding.BUTTON_MY_ONBOARDING,
+            "title": "👤 My Onboarding",
+            "description": "Checklist, progress and pending tasks",
+            "preference": "custom_whatsapp_my_onboarding",
+        },
+    ]
+
+    if not employee:
+        return [
+            {key: value for key, value in option.items() if key != "preference"}
+            for option in options
+        ]
+
+    preferences = frappe.db.get_value(
+        "Employee",
+        employee,
+        [option["preference"] for option in options],
+        as_dict=True,
+    ) or {}
+
+    return [
+        {key: value for key, value in option.items() if key != "preference"}
+        for option in options
+        if preferences.get(option["preference"], 1)
+    ]
 
 
 # ============================================================

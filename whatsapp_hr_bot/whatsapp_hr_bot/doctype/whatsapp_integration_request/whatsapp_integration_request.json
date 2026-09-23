@@ -1,0 +1,301 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:WIR-{#####}",
+ "creation": "2026-09-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "company_details_section",
+  "company_name",
+  "contact_person",
+  "email",
+  "phone_number",
+  "company_website",
+  "industry",
+  "company_details_column_break",
+  "erp_system",
+  "erp_version",
+  "hosting_type",
+  "erp_url",
+  "whatsapp_details_section",
+  "whatsapp_business_account_available",
+  "whatsapp_business_phone_number",
+  "meta_business_verification_status",
+  "waba_id",
+  "whatsapp_details_column_break",
+  "phone_number_id",
+  "meta_app_id",
+  "existing_whatsapp_provider",
+  "integration_section",
+  "integration_type",
+  "two_way_communication_required",
+  "integration_column_break",
+  "bot_required",
+  "use_cases_section",
+  "whatsapp_use_cases",
+  "templates_section",
+  "whatsapp_templates",
+  "bot_actions_section",
+  "bot_actions",
+  "additional_section",
+  "expected_messages_per_day",
+  "additional_requirements",
+  "supporting_documents",
+  "status_section",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "company_details_section",
+   "fieldtype": "Section Break",
+   "label": "Company Details"
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Company Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "contact_person",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Contact Person",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "fieldname": "phone_number",
+   "fieldtype": "Data",
+   "label": "Phone Number",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_website",
+   "fieldtype": "Data",
+   "label": "Company Website",
+   "options": "URL"
+  },
+  {
+   "fieldname": "industry",
+   "fieldtype": "Data",
+   "label": "Industry"
+  },
+  {
+   "fieldname": "company_details_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "erp_system",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "ERP System",
+   "options": "\nERPNext\nFrappe\nSAP\nZoho\nSalesforce\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "erp_version",
+   "fieldtype": "Data",
+   "label": "ERP Version"
+  },
+  {
+   "fieldname": "hosting_type",
+   "fieldtype": "Select",
+   "label": "Hosting Type",
+   "options": "\nFrappe Cloud\nSelf Hosted\nAWS\nAzure\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "erp_url",
+   "fieldtype": "Data",
+   "label": "ERP URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "whatsapp_details_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Details"
+  },
+  {
+   "fieldname": "whatsapp_business_account_available",
+   "fieldtype": "Select",
+   "label": "WhatsApp Business Account Available",
+   "options": "\nYes\nNo\nNot Sure",
+   "reqd": 1
+  },
+  {
+   "fieldname": "whatsapp_business_phone_number",
+   "fieldtype": "Data",
+   "label": "WhatsApp Business Phone Number",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "meta_business_verification_status",
+   "fieldtype": "Select",
+   "label": "Meta Business Verification Status",
+   "options": "\nVerified\nNot Verified\nIn Progress\nNot Applicable"
+  },
+  {
+   "fieldname": "waba_id",
+   "fieldtype": "Data",
+   "label": "WABA ID"
+  },
+  {
+   "fieldname": "whatsapp_details_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "phone_number_id",
+   "fieldtype": "Data",
+   "label": "Phone Number ID"
+  },
+  {
+   "fieldname": "meta_app_id",
+   "fieldtype": "Data",
+   "label": "Meta App ID"
+  },
+  {
+   "fieldname": "existing_whatsapp_provider",
+   "fieldtype": "Data",
+   "label": "Existing WhatsApp Provider"
+  },
+  {
+   "fieldname": "integration_section",
+   "fieldtype": "Section Break",
+   "label": "Integration"
+  },
+  {
+   "fieldname": "integration_type",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Integration Type",
+   "options": "\nNotifications\nTwo Way Communication\nChatbot\nNotifications + Chatbot\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "two_way_communication_required",
+   "fieldtype": "Select",
+   "label": "Two Way Communication Required",
+   "options": "\nYes\nNo\nNot Sure",
+   "reqd": 1
+  },
+  {
+   "fieldname": "integration_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bot_required",
+   "fieldtype": "Select",
+   "label": "Bot Required",
+   "options": "\nYes\nNo\nNot Sure",
+   "reqd": 1
+  },
+  {
+   "fieldname": "use_cases_section",
+   "fieldtype": "Section Break",
+   "label": "Use Cases"
+  },
+  {
+   "fieldname": "whatsapp_use_cases",
+   "fieldtype": "Table",
+   "label": "WhatsApp Use Cases",
+   "options": "WhatsApp Use Case"
+  },
+  {
+   "fieldname": "templates_section",
+   "fieldtype": "Section Break",
+   "label": "Template Requirements"
+  },
+  {
+   "fieldname": "whatsapp_templates",
+   "fieldtype": "Table",
+   "label": "WhatsApp Templates",
+   "options": "WhatsApp Template Requirement"
+  },
+  {
+   "fieldname": "bot_actions_section",
+   "fieldtype": "Section Break",
+   "label": "Bot Actions"
+  },
+  {
+   "fieldname": "bot_actions",
+   "fieldtype": "Table",
+   "label": "Bot Actions",
+   "options": "WhatsApp Bot Action"
+  },
+  {
+   "fieldname": "additional_section",
+   "fieldtype": "Section Break",
+   "label": "Additional"
+  },
+  {
+   "fieldname": "expected_messages_per_day",
+   "fieldtype": "Int",
+   "label": "Expected Messages Per Day",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "additional_requirements",
+   "fieldtype": "Text Editor",
+   "label": "Additional Requirements"
+  },
+  {
+   "fieldname": "supporting_documents",
+   "fieldtype": "Attach",
+   "label": "Supporting Documents"
+  },
+  {
+   "fieldname": "status_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "New",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "New\nRequirements Review\nTechnical Review\nDevelopment\nTesting\nCompleted\nOn Hold\nRejected"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WhatsApp HR Bot",
+ "name": "WhatsApp Integration Request",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "company_name",
+ "track_changes": 1
+}

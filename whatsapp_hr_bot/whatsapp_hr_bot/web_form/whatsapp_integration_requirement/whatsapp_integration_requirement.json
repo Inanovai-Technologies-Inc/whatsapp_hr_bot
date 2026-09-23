@@ -1,0 +1,259 @@
+{
+ "allow_comments": 0,
+ "allow_delete": 0,
+ "allow_edit": 0,
+ "allow_incomplete": 0,
+ "allow_multiple": 1,
+ "allow_print": 0,
+ "anonymous": 1,
+ "apply_document_permissions": 0,
+ "button_label": "Submit Request",
+ "condition_json": "[]",
+ "creation": "2026-09-22 00:00:00.000000",
+ "doc_type": "WhatsApp Integration Request",
+ "docstatus": 0,
+ "doctype": "Web Form",
+ "hide_footer": 0,
+ "hide_navbar": 0,
+ "idx": 0,
+ "introduction_text": "<p>Tell us about your business and we will help you plan your WhatsApp integration. Fields marked with an asterisk are required.</p>",
+ "is_standard": 1,
+ "list_columns": [],
+ "login_required": 0,
+ "max_attachment_size": 0,
+ "modified": "2026-09-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WhatsApp HR Bot",
+ "name": "whatsapp-integration-requirement",
+ "owner": "Administrator",
+ "published": 1,
+ "route": "whatsapp-integration-requirement",
+ "show_attachments": 0,
+ "show_list": 0,
+ "show_sidebar": 0,
+ "success_message": "Thank you for submitting your WhatsApp integration requirements. Our team will review the details and get back to you shortly.",
+ "success_title": "Request Submitted",
+ "title": "WhatsApp Integration Requirement",
+ "web_form_fields": [
+  {
+   "fieldname": "company_information_section",
+   "fieldtype": "Section Break",
+   "label": "Company Information"
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "label": "Company Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "contact_person",
+   "fieldtype": "Data",
+   "label": "Contact Person",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_information_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "phone_number",
+   "fieldtype": "Data",
+   "label": "Phone Number",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company_website",
+   "fieldtype": "Data",
+   "label": "Company Website",
+   "options": "URL"
+  },
+  {
+   "fieldname": "industry",
+   "fieldtype": "Data",
+   "label": "Industry"
+  },
+  {
+   "fieldname": "erp_system_section",
+   "fieldtype": "Section Break",
+   "label": "Existing ERP System"
+  },
+  {
+   "fieldname": "erp_system",
+   "fieldtype": "Select",
+   "label": "ERP System",
+   "options": "\nERPNext\nFrappe\nSAP\nZoho\nSalesforce\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "erp_version",
+   "fieldtype": "Data",
+   "label": "ERP Version"
+  },
+  {
+   "fieldname": "erp_system_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hosting_type",
+   "fieldtype": "Select",
+   "label": "Hosting Type",
+   "options": "\nFrappe Cloud\nSelf Hosted\nAWS\nAzure\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "erp_url",
+   "fieldtype": "Data",
+   "label": "ERP URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "whatsapp_configuration_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Configuration"
+  },
+  {
+   "fieldname": "whatsapp_business_account_available",
+   "fieldtype": "Select",
+   "label": "WhatsApp Business Account Available",
+   "options": "\nYes\nNo\nNot Sure",
+   "reqd": 1
+  },
+  {
+   "fieldname": "whatsapp_business_phone_number",
+   "fieldtype": "Data",
+   "label": "WhatsApp Business Phone Number",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "meta_business_verification_status",
+   "fieldtype": "Select",
+   "label": "Meta Business Verification Status",
+   "options": "\nVerified\nNot Verified\nIn Progress\nNot Applicable"
+  },
+  {
+   "fieldname": "existing_whatsapp_provider",
+   "fieldtype": "Data",
+   "label": "Existing WhatsApp Provider",
+   "description": "e.g. name of any BSP or tool you currently use to send WhatsApp messages, if any."
+  },
+  {
+   "fieldname": "whatsapp_configuration_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "waba_id",
+   "fieldtype": "Data",
+   "label": "WABA ID",
+   "description": "Your WhatsApp Business Account ID, if you already have one."
+  },
+  {
+   "fieldname": "phone_number_id",
+   "fieldtype": "Data",
+   "label": "Phone Number ID",
+   "description": "Your Meta Phone Number ID, if already available."
+  },
+  {
+   "fieldname": "meta_app_id",
+   "fieldtype": "Data",
+   "label": "Meta App ID",
+   "description": "Your Meta App ID, if already available."
+  },
+  {
+   "fieldname": "integration_requirements_section",
+   "fieldtype": "Section Break",
+   "label": "Integration Requirements"
+  },
+  {
+   "fieldname": "integration_type",
+   "fieldtype": "Select",
+   "label": "Integration Type",
+   "options": "\nNotifications\nTwo Way Communication\nChatbot\nNotifications + Chatbot\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "integration_requirements_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "two_way_communication_required",
+   "fieldtype": "Select",
+   "label": "Two Way Communication Required",
+   "options": "\nYes\nNo\nNot Sure",
+   "reqd": 1
+  },
+  {
+   "fieldname": "bot_required",
+   "fieldtype": "Select",
+   "label": "Bot Required",
+   "options": "\nYes\nNo\nNot Sure",
+   "reqd": 1
+  },
+  {
+   "fieldname": "whatsapp_use_cases_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Use Cases",
+   "description": "List the notifications or messages you would like to send over WhatsApp."
+  },
+  {
+   "fieldname": "whatsapp_use_cases",
+   "fieldtype": "Table",
+   "label": "WhatsApp Use Cases",
+   "options": "WhatsApp Use Case"
+  },
+  {
+   "fieldname": "whatsapp_templates_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp Templates",
+   "description": "List any WhatsApp message templates you already have or would like created."
+  },
+  {
+   "fieldname": "whatsapp_templates",
+   "fieldtype": "Table",
+   "label": "WhatsApp Templates",
+   "options": "WhatsApp Template Requirement"
+  },
+  {
+   "fieldname": "bot_requirements_section",
+   "fieldtype": "Section Break",
+   "label": "Bot Requirements",
+   "depends_on": "eval:doc.bot_required=='Yes'",
+   "description": "List the commands or actions your WhatsApp bot should support."
+  },
+  {
+   "fieldname": "bot_actions",
+   "fieldtype": "Table",
+   "label": "Bot Actions",
+   "options": "WhatsApp Bot Action",
+   "depends_on": "eval:doc.bot_required=='Yes'"
+  },
+  {
+   "fieldname": "additional_requirements_section",
+   "fieldtype": "Section Break",
+   "label": "Additional Requirements"
+  },
+  {
+   "fieldname": "expected_messages_per_day",
+   "fieldtype": "Int",
+   "label": "Expected Messages Per Day"
+  },
+  {
+   "fieldname": "additional_requirements",
+   "fieldtype": "Text Editor",
+   "label": "Additional Requirements"
+  },
+  {
+   "fieldname": "supporting_documents",
+   "fieldtype": "Attach",
+   "label": "Supporting Documents"
+  }
+ ]
+}

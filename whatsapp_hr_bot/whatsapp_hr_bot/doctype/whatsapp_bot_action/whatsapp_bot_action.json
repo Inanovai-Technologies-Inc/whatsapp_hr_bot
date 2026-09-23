@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "creation": "2026-09-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "action_name",
+  "user_input_or_command",
+  "module",
+  "column_break_bot_action_1",
+  "document_type",
+  "action",
+  "authentication_required",
+  "section_break_bot_action_1",
+  "response_type",
+  "response_description"
+ ],
+ "fields": [
+  {
+   "fieldname": "action_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Action Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "user_input_or_command",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "User Input / Command",
+   "reqd": 1
+  },
+  {
+   "fieldname": "module",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Module",
+   "options": "\nHR\nCRM\nSales\nPurchase\nAccounts\nProjects\nSupport\nInventory\nOther"
+  },
+  {
+   "fieldname": "column_break_bot_action_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Data",
+   "label": "Document Type"
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "\nFetch Information\nCreate Record\nUpdate Record\nApprove\nReject\nChange Status\nSend Document\nSend Notification\nOther"
+  },
+  {
+   "fieldname": "authentication_required",
+   "fieldtype": "Select",
+   "label": "Authentication Required",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "section_break_bot_action_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "response_type",
+   "fieldtype": "Select",
+   "label": "Response Type",
+   "options": "\nText\nButtons\nList\nDocument\nText + Buttons"
+  },
+  {
+   "fieldname": "response_description",
+   "fieldtype": "Small Text",
+   "label": "Response Description",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WhatsApp HR Bot",
+ "name": "WhatsApp Bot Action",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

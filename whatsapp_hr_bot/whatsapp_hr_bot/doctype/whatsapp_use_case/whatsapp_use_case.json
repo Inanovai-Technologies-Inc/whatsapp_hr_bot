@@ -1,0 +1,126 @@
+{
+ "actions": [],
+ "creation": "2026-09-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "use_case_name",
+  "module",
+  "document_type",
+  "column_break_use_case_1",
+  "trigger",
+  "recipient_type",
+  "message_type",
+  "section_break_use_case_1",
+  "message_description",
+  "column_break_use_case_2",
+  "attachment_required",
+  "attachment_type",
+  "two_way_reply_required",
+  "buttons_required",
+  "priority"
+ ],
+ "fields": [
+  {
+   "fieldname": "use_case_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Use Case Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "module",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Module",
+   "options": "\nHR\nCRM\nSales\nPurchase\nAccounts\nProjects\nSupport\nInventory\nOther"
+  },
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Document Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_use_case_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "trigger",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Trigger",
+   "options": "\nDocument Created\nDocument Submitted\nDocument Approved\nDocument Rejected\nStatus Changed\nPayment Received\nScheduled\nManual Button\nAPI Event\nOther"
+  },
+  {
+   "fieldname": "recipient_type",
+   "fieldtype": "Select",
+   "label": "Recipient Type",
+   "options": "\nEmployee\nCustomer\nSupplier\nManager\nHR\nAdmin\nUser\nOther"
+  },
+  {
+   "fieldname": "message_type",
+   "fieldtype": "Select",
+   "label": "Message Type",
+   "options": "\nWhatsApp Template\nFree Text\nTemplate + Buttons\nTemplate + Attachment"
+  },
+  {
+   "fieldname": "section_break_use_case_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "message_description",
+   "fieldtype": "Small Text",
+    "label": "Message Description"
+  },
+  {
+   "fieldname": "column_break_use_case_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "attachment_required",
+   "fieldtype": "Select",
+   "label": "Attachment Required",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "attachment_type",
+   "fieldtype": "Select",
+   "label": "Attachment Type",
+   "options": "\nPDF\nImage\nDocument\nExcel\nOther"
+  },
+  {
+   "fieldname": "two_way_reply_required",
+   "fieldtype": "Select",
+   "label": "Two Way Reply Required",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "buttons_required",
+   "fieldtype": "Select",
+   "label": "Buttons Required",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Select",
+   "label": "Priority",
+   "options": "\nHigh\nMedium\nLow"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WhatsApp HR Bot",
+ "name": "WhatsApp Use Case",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

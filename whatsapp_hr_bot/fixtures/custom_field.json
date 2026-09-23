@@ -71,5 +71,54 @@
   "insert_after": "custom_sent_at",
   "read_only": 1,
   "no_copy": 1
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_notification_preferences",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_notification_preferences",
+  "label": "WhatsApp Notification Preferences",
+  "fieldtype": "Section Break",
+  "insert_after": "contact_details"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_apply_leave",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_apply_leave",
+  "label": "Apply Leave",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_notification_preferences"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_leave_balance",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_leave_balance",
+  "label": "Leave Balance",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_apply_leave"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_my_requests",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_my_requests",
+  "label": "My Requests",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_leave_balance"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_my_onboarding",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_my_onboarding",
+  "label": "My Onboarding",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_my_requests"
  }
 ]

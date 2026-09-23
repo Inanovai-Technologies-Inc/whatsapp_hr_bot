@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "creation": "2026-09-22 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "template_name",
+  "template_category",
+  "language",
+  "column_break_template_1",
+  "template_status",
+  "buttons_required",
+  "section_break_template_1",
+  "message_content",
+  "variables_required",
+  "button_details"
+ ],
+ "fields": [
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Template Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "template_category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Template Category",
+   "options": "\nUtility\nAuthentication\nMarketing"
+  },
+  {
+   "fieldname": "language",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Language",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_template_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "template_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Template Status",
+   "options": "\nAlready Approved\nPending Approval\nNot Created\nNot Required"
+  },
+  {
+   "fieldname": "buttons_required",
+   "fieldtype": "Select",
+   "label": "Buttons Required",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "section_break_template_1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "message_content",
+   "fieldtype": "Text Editor",
+    "label": "Message Content"
+  },
+  {
+   "fieldname": "variables_required",
+   "fieldtype": "Small Text",
+   "label": "Variables Required"
+  },
+  {
+   "fieldname": "button_details",
+   "fieldtype": "Small Text",
+   "label": "Button Details"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WhatsApp HR Bot",
+ "name": "WhatsApp Template Requirement",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
