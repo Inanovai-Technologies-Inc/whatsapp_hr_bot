@@ -31,6 +31,7 @@ def send_now(doctype: str, docname: str) -> dict:
     sent = [r for r in results if r.get("ok") and not r.get("skipped")]
     already_sent = [r for r in results if r.get("skip_reason") == "already_sent"]
     not_due = [r for r in results if r.get("skip_reason") == "condition_not_met"]
+    preference_disabled = [r for r in results if r.get("skip_reason") == "preference_disabled"]
     failed = [r for r in results if not r.get("ok")]
 
     if sent:
@@ -52,6 +53,12 @@ def send_now(doctype: str, docname: str) -> dict:
         return {
             "ok": False,
             "message": _("This document doesn't currently meet the conditions for a WhatsApp notification."),
+        }
+
+    if preference_disabled:
+        return {
+            "ok": True,
+            "message": _("WhatsApp notification skipped because the employee has disabled this category."),
         }
 
     return {

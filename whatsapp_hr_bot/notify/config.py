@@ -26,6 +26,20 @@ Each rule maps a DocType + one or more doc events to:
   document" (e.g. Expense Claim approved vs rejected), so repeated
   triggers of the same event never create duplicate messages while a
   genuinely different outcome still gets its own message.
+- an optional ``preference_field`` - an Employee Check fieldname the
+  recipient must have enabled (or leave unset/missing) for the message
+  to send; see ``engine._run_rule``. Backed by the "WhatsApp
+  Notification Categories" fields added in fixtures/custom_field.json
+  (``custom_whatsapp_leave``, ``_onboarding``, ``_attendance``,
+  ``_finance``, ``_hr_announcements``) - one Check per category,
+  default enabled so an un-configured site keeps sending exactly as
+  before. Only Expense Claim (``custom_whatsapp_finance``) is wired to
+  one of these today; the rest exist for future rules to opt into via
+  the same ``preference_field`` key, no engine changes required. These
+  are unrelated to the ``custom_whatsapp_apply_leave`` /
+  ``_leave_balance`` / ``_my_requests`` / ``_my_onboarding`` checkboxes
+  above them on the Employee form, which control the *inbound* chatbot
+  menu (whatsapp_handler.py), not this outbound engine.
 
 Meta's 24-hour rule
 --------------------
@@ -181,6 +195,7 @@ NOTIFICATION_RULES = [
             "name_field": "employee_name",
             "user_fallback_field": "user_id",
         },
+        "preference_field": "custom_whatsapp_finance",
         "condition": lambda doc: doc.docstatus == 1 and doc.approval_status == "Approved",
         "dedupe_key": lambda doc: "approved",
     },
@@ -195,6 +210,7 @@ NOTIFICATION_RULES = [
             "name_field": "employee_name",
             "user_fallback_field": "user_id",
         },
+        "preference_field": "custom_whatsapp_finance",
         "condition": lambda doc: doc.docstatus == 1 and doc.approval_status == "Rejected",
         "dedupe_key": lambda doc: "rejected",
     },

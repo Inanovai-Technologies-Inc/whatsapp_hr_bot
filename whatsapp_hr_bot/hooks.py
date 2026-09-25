@@ -289,10 +289,9 @@ doc_events = {
     "Sales Order": {
         "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },
-    "Expense Claim": {
-        "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
-        "on_update_after_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
-    },
+    # Expense Claim is intentionally NOT wired here - it sends only via
+    # the manual "Send WhatsApp" button (public/js/expense_claim.js ->
+    # api.send_now -> dispatch), never automatically on submit/approval.
     "Purchase Receipt": {
         "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },

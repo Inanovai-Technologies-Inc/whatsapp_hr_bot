@@ -120,5 +120,77 @@
   "fieldtype": "Check",
   "default": "1",
   "insert_after": "custom_whatsapp_my_requests"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_expense_claim",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_expense_claim",
+  "label": "Expense Claim",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_my_onboarding",
+  "description": "Gates the inbound chatbot's \"Expense Claim Status\" menu option (whatsapp_handler.py), not the outbound Finance alerts below."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_notification_categories",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_notification_categories",
+  "label": "WhatsApp Notification Categories",
+  "fieldtype": "Section Break",
+  "insert_after": "custom_whatsapp_expense_claim",
+  "description": "Which categories of *outbound* WhatsApp alerts (notify/config.py rules triggered by document events, e.g. Expense Claim approval) this employee receives. Unrelated to the chatbot menu checkboxes above, which control what the inbound WhatsApp bot's own menu offers."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_leave",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_leave",
+  "label": "Leave",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_notification_categories"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_onboarding",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_onboarding",
+  "label": "Onboarding",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_leave"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_attendance",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_attendance",
+  "label": "Attendance",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_onboarding"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_finance",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_finance",
+  "label": "Finance",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_attendance",
+  "description": "Gates the Expense Claim approved/rejected WhatsApp notifications (notify/config.py)."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_whatsapp_hr_announcements",
+  "dt": "Employee",
+  "fieldname": "custom_whatsapp_hr_announcements",
+  "label": "HR Announcements",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_whatsapp_finance"
  }
 ]

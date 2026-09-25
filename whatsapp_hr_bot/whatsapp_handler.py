@@ -205,9 +205,21 @@ def handle_whatsapp_message(doc, method=None):
         # "leave"), so they keep routing to handle_leave_flow
         # exactly as before.
 
-        if state.get("flow") == onboarding.ONBOARDING_FLOW:
+        flow = state.get("flow")
+
+        if flow == onboarding.ONBOARDING_FLOW:
 
             onboarding.handle_onboarding_message(
+                doc,
+                phone,
+                message
+            )
+
+            return
+
+        if flow == "expense_claim":
+
+            handle_expense_claim_flow(
                 doc,
                 phone,
                 message
@@ -339,6 +351,7 @@ def extract_button_id(doc):
         if state:
 
             step = state.get("step")
+            flow = state.get("flow")
 
             # ------------------------------------------------
             # Leave type
@@ -356,27 +369,60 @@ def extract_button_id(doc):
                     return leave_type_id
 
             # ------------------------------------------------
+            # Expense claim type
+            # ------------------------------------------------
+
+            if step == "expense_type":
+
+                expense_type_id = (
+                    find_expense_type_from_message(
+                        message
+                    )
+                )
+
+                if expense_type_id:
+                    return expense_type_id
+
+            # ------------------------------------------------
             # Confirmation
+            #
+            # Which confirm/cancel id a typed "confirm"/"cancel"
+            # maps to depends on which flow's session is open -
+            # each flow's own confirmation step (see
+            # handle_leave_flow / handle_expense_claim_flow) also
+            # accepts these words directly, so this fallback only
+            # matters for payload shapes extract_valid_id couldn't
+            # parse above.
             # ------------------------------------------------
 
             normalized = normalize_text(message)
 
-            if normalized in [
-                "confirm",
-                "yes",
-                "submit",
-                "confirm leave"
-            ]:
+            if flow == "expense_claim":
 
-                return "confirm_leave"
+                if normalized in ["confirm", "yes", "submit"]:
+                    return "confirm_expense_claim"
 
-            if normalized in [
-                "cancel",
-                "no",
-                "cancel leave"
-            ]:
+                if normalized in ["cancel", "no"]:
+                    return "cancel_expense_claim"
 
-                return "cancel_leave"
+            else:
+
+                if normalized in [
+                    "confirm",
+                    "yes",
+                    "submit",
+                    "confirm leave"
+                ]:
+
+                    return "confirm_leave"
+
+                if normalized in [
+                    "cancel",
+                    "no",
+                    "cancel leave"
+                ]:
+
+                    return "cancel_leave"
 
     return None
 
@@ -511,10 +557,17 @@ def is_valid_button_id(value):
         "my_requests",
         "confirm_leave",
         "cancel_leave",
+        "expense_claim_status",
+        "apply_expense_claim",
+        "confirm_expense_claim",
+        "cancel_expense_claim",
     ]:
         return True
 
     if value.startswith("leave_type:"):
+        return True
+
+    if value.startswith("expense_type:"):
         return True
 
     from whatsapp_hr_bot import onboarding
@@ -573,6 +626,48 @@ def find_leave_type_from_message(message):
         if exists:
 
             return f"leave_type:{line}"
+
+    return None
+
+
+# ============================================================
+# FIND EXPENSE CLAIM TYPE FROM BUTTON TITLE
+# ============================================================
+
+def find_expense_type_from_message(message):
+
+    message = (
+        message or ""
+    ).strip()
+
+    if not message:
+        return None
+
+    expense_type = frappe.db.exists(
+        "Expense Claim Type",
+        message
+    )
+
+    if expense_type:
+
+        return f"expense_type:{message}"
+
+    lines = [
+        line.strip()
+        for line in message.splitlines()
+        if line.strip()
+    ]
+
+    for line in reversed(lines):
+
+        exists = frappe.db.exists(
+            "Expense Claim Type",
+            line
+        )
+
+        if exists:
+
+            return f"expense_type:{line}"
 
     return None
 
@@ -640,6 +735,18 @@ def get_whatsapp_menu_options(employee, onboarding):
             "title": "👤 My Onboarding",
             "description": "Checklist, progress and pending tasks",
             "preference": "custom_whatsapp_my_onboarding",
+        },
+        {
+            "id": "apply_expense_claim",
+            "title": "🧾 Apply Expense Claim",
+            "description": "Submit a new expense claim",
+            "preference": "custom_whatsapp_expense_claim",
+        },
+        {
+            "id": "expense_claim_status",
+            "title": "📄 Expense Claim Status",
+            "description": "Check your expense claim status",
+            "preference": "custom_whatsapp_expense_claim",
         },
     ]
 
@@ -807,6 +914,116 @@ def handle_button(doc, phone, button_id):
         return
 
     # ========================================================
+    # APPLY EXPENSE CLAIM
+    # ========================================================
+
+    if button_id == "apply_expense_claim":
+
+        employee = get_employee(phone)
+
+        if not employee:
+
+            clear_state(phone)
+
+            send_text(
+                doc,
+                "❌ I could not find your employee record in HRMS.\n\n"
+                "Please contact HR."
+            )
+
+            return
+
+        expense_types = frappe.get_all(
+            "Expense Claim Type",
+            pluck="name",
+            order_by="name asc"
+        )
+
+        if not expense_types:
+
+            clear_state(phone)
+
+            send_text(
+                doc,
+                "❌ No expense claim types are currently available in HRMS."
+            )
+
+            return
+
+        buttons = []
+
+        for expense_type in expense_types[:3]:
+
+            buttons.append(
+                {
+                    "id": f"expense_type:{expense_type}",
+                    "title": expense_type[:20]
+                }
+            )
+
+        set_state(
+            phone,
+            {
+                # Tags this session as the expense claim flow, kept
+                # separate from "leave" the same way onboarding is -
+                # see handle_whatsapp_message's routing on "flow".
+                "flow": "expense_claim",
+                "employee": employee,
+                "step": "expense_type"
+            }
+        )
+
+        send_interactive(
+            doc,
+            "Please select the expense type:",
+            buttons
+        )
+
+        return
+
+    # ========================================================
+    # DYNAMIC EXPENSE TYPE
+    # ========================================================
+
+    if button_id.startswith("expense_type:"):
+
+        handle_expense_claim_flow(
+            doc,
+            phone,
+            button_id
+        )
+
+        return
+
+    # ========================================================
+    # CONFIRM EXPENSE CLAIM
+    # ========================================================
+
+    if button_id == "confirm_expense_claim":
+
+        process_expense_claim_confirmation(
+            doc,
+            phone,
+            "confirm_expense_claim"
+        )
+
+        return
+
+    # ========================================================
+    # CANCEL EXPENSE CLAIM
+    # ========================================================
+
+    if button_id == "cancel_expense_claim":
+
+        process_expense_claim_confirmation(
+            doc,
+            phone,
+            "cancel_expense_claim"
+        )
+
+        return
+
+    # ========================================================
     # LEAVE BALANCE
     # ========================================================
 
@@ -885,6 +1102,32 @@ def handle_button(doc, phone, button_id):
                 f"{request.from_date} → {request.to_date}\n"
                 f"Status: {request.status}\n\n"
             )
+
+        send_text(
+            doc,
+            message
+        )
+
+        return
+
+    # ========================================================
+    # EXPENSE CLAIM STATUS
+    # ========================================================
+
+    if button_id == "expense_claim_status":
+
+        employee = get_employee(phone)
+
+        if not employee:
+
+            send_text(
+                doc,
+                "❌ I could not find your employee record in HRMS."
+            )
+
+            return
+
+        message = build_expense_claim_status_message(employee)
 
         send_text(
             doc,
@@ -1057,6 +1300,72 @@ def _log_leave_balance_debug(
         f"Remaining per ERPNext={remaining:g} | "
         f"Final Calculated Balance={available:g}"
     )
+
+
+# ============================================================
+# EXPENSE CLAIM STATUS
+# ============================================================
+
+def build_expense_claim_status_message(employee):
+    """Build the '🧾 Your Expense Claims' status summary for an employee.
+
+    Read-only lookup, independent of the outbound "Send WhatsApp"
+    notification system (notify/config.py + engine.py) - this only
+    reports whatever approval_status already sits on the Expense Claim,
+    it never sends or triggers anything on its own.
+    """
+
+    claims = frappe.get_all(
+        "Expense Claim",
+        filters={
+            "employee": employee
+        },
+        fields=[
+            "name",
+            "approval_status",
+            "expense_approver",
+            "total_claimed_amount",
+            "posting_date",
+        ],
+        order_by="creation desc",
+        limit_page_length=5
+    )
+
+    if not claims:
+
+        return "You don't have any expense claims yet."
+
+    message = "🧾 Your Recent Expense Claims\n\n"
+
+    status_icons = {
+        "Draft": "🕓",
+        "Approved": "✅",
+        "Rejected": "❌",
+    }
+
+    for claim in claims:
+
+        icon = status_icons.get(claim.approval_status, "•")
+
+        approver_name = None
+
+        if claim.expense_approver:
+
+            approver_name = frappe.db.get_value(
+                "User",
+                claim.expense_approver,
+                "full_name"
+            )
+
+        message += (
+            f"{claim.name}\n"
+            f"Amount: {flt(claim.total_claimed_amount):g}\n"
+            f"Date: {claim.posting_date}\n"
+            f"Status: {icon} {claim.approval_status}\n"
+            f"Approver: {approver_name or claim.expense_approver or '-'}\n\n"
+        )
+
+    return message.strip()
 
 
 # ============================================================
@@ -1718,6 +2027,523 @@ def process_confirmation(doc, phone, button_id):
         send_text(
             doc,
             "❌ There was a problem creating your leave request.\n\n"
+            "Your information has not been cleared.\n"
+            "Please try confirming again or type *Hii* to restart."
+        )
+
+    finally:
+
+        frappe.set_user(original_user)
+
+
+# ============================================================
+# EXPENSE CLAIM FLOW
+# ============================================================
+
+def handle_expense_claim_flow(doc, phone, message):
+
+    state = get_state(phone)
+
+    if not state:
+
+        send_text(
+            doc,
+            "Your expense claim session has expired.\n\n"
+            "Please type *Hii* to start again."
+        )
+
+        return
+
+    step = state.get("step")
+
+    message = (
+        message or ""
+    ).strip()
+
+    # ========================================================
+    # EXPENSE TYPE
+    # ========================================================
+
+    if step == "expense_type":
+
+        if message.startswith("expense_type:"):
+
+            expense_type = message.split(
+                "expense_type:",
+                1
+            )[1].strip()
+
+        else:
+
+            expense_type = message
+
+            if "\n" in expense_type:
+
+                lines = [
+                    line.strip()
+                    for line in expense_type.splitlines()
+                    if line.strip()
+                ]
+
+                if lines:
+
+                    expense_type = lines[-1]
+
+        exists = frappe.db.exists(
+            "Expense Claim Type",
+            expense_type
+        )
+
+        if not exists:
+
+            send_text(
+                doc,
+                "❌ Invalid expense type.\n\n"
+                "Please select one of the expense types shown above."
+            )
+
+            return
+
+        state["expense_type"] = expense_type
+        state["step"] = "expense_date"
+
+        set_state(
+            phone,
+            state
+        )
+
+        send_text(
+            doc,
+            f"Expense type selected: {expense_type}\n\n"
+            "Please enter the expense date.\n\n"
+            "Example: 2026-09-10"
+        )
+
+        return
+
+    # ========================================================
+    # EXPENSE DATE
+    # ========================================================
+
+    if step == "expense_date":
+
+        try:
+
+            expense_date = getdate(message)
+
+        except Exception:
+
+            send_text(
+                doc,
+                "❌ Invalid date format.\n\n"
+                "Please use:\n"
+                "YYYY-MM-DD\n\n"
+                "Example: 2026-09-10"
+            )
+
+            return
+
+        if expense_date > getdate(today()):
+
+            send_text(
+                doc,
+                "❌ Expense date cannot be in the future.\n\n"
+                "Please enter today or a past date."
+            )
+
+            return
+
+        state["expense_date"] = str(expense_date)
+        state["step"] = "description"
+
+        set_state(
+            phone,
+            state
+        )
+
+        send_text(
+            doc,
+            "Please enter a description for this expense."
+        )
+
+        return
+
+    # ========================================================
+    # DESCRIPTION
+    # ========================================================
+
+    if step == "description":
+
+        description = message.strip()
+
+        if not description:
+
+            send_text(
+                doc,
+                "❌ Please enter a description for this expense."
+            )
+
+            return
+
+        state["description"] = description
+        state["step"] = "amount"
+
+        set_state(
+            phone,
+            state
+        )
+
+        send_text(
+            doc,
+            "Please enter the amount.\n\n"
+            "Example: 1500"
+        )
+
+        return
+
+    # ========================================================
+    # AMOUNT
+    # ========================================================
+
+    if step == "amount":
+
+        try:
+
+            amount = flt(message)
+
+        except Exception:
+
+            amount = 0
+
+        if amount <= 0:
+
+            send_text(
+                doc,
+                "❌ Please enter a valid amount greater than 0.\n\n"
+                "Example: 1500"
+            )
+
+            return
+
+        state["amount"] = amount
+        state["step"] = "remark"
+
+        set_state(
+            phone,
+            state
+        )
+
+        send_text(
+            doc,
+            "Please enter a remark for this expense claim."
+        )
+
+        return
+
+    # ========================================================
+    # REMARK
+    # ========================================================
+
+    if step == "remark":
+
+        remark = message.strip()
+
+        if not remark:
+
+            send_text(
+                doc,
+                "❌ Please enter a remark for this expense claim."
+            )
+
+            return
+
+        state["remark"] = remark
+        state["step"] = "confirmation"
+
+        set_state(
+            phone,
+            state
+        )
+
+        send_interactive(
+            doc,
+            build_expense_claim_confirmation_message(state),
+            [
+                {
+                    "id": "confirm_expense_claim",
+                    "title": "Confirm"
+                },
+                {
+                    "id": "cancel_expense_claim",
+                    "title": "Cancel"
+                }
+            ]
+        )
+
+        return
+
+    # ========================================================
+    # CONFIRMATION
+    # ========================================================
+
+    if step == "confirmation":
+
+        normalized = normalize_text(message)
+
+        if normalized in [
+            "confirm",
+            "yes",
+            "submit"
+        ]:
+
+            process_expense_claim_confirmation(
+                doc,
+                phone,
+                "confirm_expense_claim"
+            )
+
+            return
+
+        if normalized in [
+            "cancel",
+            "no"
+        ]:
+
+            process_expense_claim_confirmation(
+                doc,
+                phone,
+                "cancel_expense_claim"
+            )
+
+            return
+
+        send_text(
+            doc,
+            "Please select *Confirm* or *Cancel*."
+        )
+
+        return
+
+    # ========================================================
+    # UNKNOWN STATE
+    # ========================================================
+
+    clear_state(phone)
+
+    send_text(
+        doc,
+        "Your expense claim session was reset.\n\n"
+        "Please type *Hii* to start again."
+    )
+
+
+# ============================================================
+# EXPENSE CLAIM CONFIRMATION MESSAGE
+# ============================================================
+
+def build_expense_claim_confirmation_message(state):
+
+    return (
+        "Please confirm your expense claim:\n\n"
+        f"Expense Type: {state.get('expense_type')}\n"
+        f"Date: {state.get('expense_date')}\n"
+        f"Description: {state.get('description')}\n"
+        f"Amount: {flt(state.get('amount')):g}\n"
+        f"Remark: {state.get('remark')}\n\n"
+        "Do you want to submit this claim?"
+    )
+
+
+# ============================================================
+# PROCESS EXPENSE CLAIM CONFIRMATION
+# ============================================================
+
+def process_expense_claim_confirmation(doc, phone, button_id):
+
+    state = get_state(phone)
+
+    if not state:
+
+        send_text(
+            doc,
+            "Your expense claim session has expired.\n\n"
+            "Please type *Hii* to start again."
+        )
+
+        return
+
+    # ========================================================
+    # CANCEL
+    # ========================================================
+
+    if button_id == "cancel_expense_claim":
+
+        clear_state(phone)
+
+        send_text(
+            doc,
+            "❌ Expense claim cancelled."
+        )
+
+        send_main_menu(doc)
+
+        return
+
+    # ========================================================
+    # CONFIRM
+    # ========================================================
+
+    if button_id != "confirm_expense_claim":
+        return
+
+    # --------------------------------------------------------
+    # Same reasoning as process_confirmation: the WhatsApp webhook
+    # runs as Guest, which cannot create documents. Elevate for the
+    # create call only and restore the original user afterwards.
+    # --------------------------------------------------------
+
+    original_user = frappe.session.user
+
+    try:
+
+        frappe.set_user("Administrator")
+
+        employee = state.get("employee")
+
+        if not employee:
+
+            raise Exception(
+                "Employee missing from WhatsApp session state."
+            )
+
+        employee_doc = frappe.get_doc(
+            "Employee",
+            employee
+        )
+
+        employee_name = employee_doc.employee_name
+
+        expense_type = state.get("expense_type")
+        expense_date = getdate(state.get("expense_date"))
+        description = state.get("description")
+        amount = flt(state.get("amount"))
+        remark = state.get("remark")
+
+        # ====================================================
+        # CREATE EXPENSE CLAIM
+        #
+        # employee / company / department / expense_approver are
+        # all taken from the Employee record, never asked over
+        # WhatsApp. approval_status is forced to "Draft" and the
+        # document is only inserted, never submitted - the only
+        # way this claim moves to Approved/Rejected or sends a
+        # WhatsApp notification is the existing "Send WhatsApp"
+        # button / HR's normal approval flow.
+        # ====================================================
+
+        expense_claim = frappe.get_doc(
+            {
+                "doctype": "Expense Claim",
+                "employee": employee,
+                "employee_name": employee_name,
+                "company": employee_doc.company,
+                "department": employee_doc.department,
+                "expense_approver": employee_doc.expense_approver,
+                "posting_date": str(expense_date),
+                "approval_status": "Draft",
+                "remark": remark,
+                "expenses": [
+                    {
+                        "expense_date": str(expense_date),
+                        "expense_type": expense_type,
+                        "description": description,
+                        "amount": amount,
+                    }
+                ],
+            }
+        )
+
+        # ----------------------------------------------------
+        # Insert only - never submit. ERPNext performs its own
+        # validation (missing expense approver, missing default
+        # account for the expense type, etc.) and we surface
+        # whatever it raises below.
+        # ----------------------------------------------------
+
+        expense_claim.insert(
+            ignore_permissions=True
+        )
+
+        frappe.db.commit()
+
+        # ====================================================
+        # SAVE CLAIM NAME
+        # ====================================================
+
+        claim_name = expense_claim.name
+        claimed_amount = flt(expense_claim.total_claimed_amount) or amount
+
+        # ====================================================
+        # CLEAR SESSION
+        # ====================================================
+
+        clear_state(phone)
+
+        # ====================================================
+        # SUCCESS MESSAGE
+        # ====================================================
+
+        send_text(
+            doc,
+            "✅ Expense claim submitted successfully!\n\n"
+            f"Claim: {claim_name}\n"
+            f"Expense Type: {expense_type}\n"
+            f"Amount: {claimed_amount:g}\n"
+            f"Status: Draft\n\n"
+            "Your claim has been created in HRMS and is awaiting "
+            "approval."
+        )
+
+        # ====================================================
+        # RETURN TO MAIN MENU
+        # ====================================================
+
+        send_main_menu(doc)
+
+    except frappe.ValidationError as exc:
+
+        # ERPNext rejected the claim (e.g. no expense approver
+        # configured, no default account for the expense type).
+        # Show its actual reason instead of a generic failure.
+
+        frappe.log_error(
+            frappe.get_traceback(),
+            "WhatsApp HR Bot - Expense Claim Error"
+        )
+
+        reason = (
+            frappe.utils.strip_html(str(exc)).strip()
+            or "Your claim could not be validated by HRMS."
+        )
+
+        send_text(
+            doc,
+            "❌ Your expense claim could not be created.\n\n"
+            f"{reason}\n\n"
+            "Please adjust the details and try again, "
+            "or type *Hii* to restart."
+        )
+
+    except Exception:
+
+        frappe.log_error(
+            frappe.get_traceback(),
+            "WhatsApp HR Bot - Expense Claim Error"
+        )
+
+        send_text(
+            doc,
+            "❌ There was a problem creating your expense claim.\n\n"
             "Your information has not been cleared.\n"
             "Please try confirming again or type *Hii* to restart."
         )

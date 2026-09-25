@@ -34,6 +34,7 @@ import re
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from whatsapp_hr_bot.notify.config import get_rules
 
@@ -104,7 +105,19 @@ def _run_rule(doc, rule: dict, force: bool) -> dict:
     if not force and _already_sent(doc.doctype, doc.name, dedupe_key_value):
         return {"ok": True, "skipped": True, "skip_reason": "already_sent"}
 
-    recipient = resolve_recipient(doc, rule.get("recipient") or {})
+    recipient_cfg = dict(rule.get("recipient") or {})
+    recipient_cfg["preference_field"] = rule.get("preference_field")
+    recipient = resolve_recipient(doc, recipient_cfg)
+
+    preference_field = rule.get("preference_field")
+    if (
+        preference_field
+        and recipient
+        and recipient.recipient_doctype == "Employee"
+        and recipient.preference_value is not None
+        and not cint(recipient.preference_value)
+    ):
+        return {"ok": True, "skipped": True, "skip_reason": "preference_disabled"}
 
     if not recipient or not recipient.phone:
         error = _("No WhatsApp-capable phone number was found for this document's recipient.")
@@ -174,6 +187,7 @@ def resolve_recipient(doc, recipient_cfg: dict):
         recipient_name=linked_name,
         phone=phone,
         display_name=display_name,
+        preference_value=recipient_doc.get(recipient_cfg.get("preference_field")),
     )
 
 
