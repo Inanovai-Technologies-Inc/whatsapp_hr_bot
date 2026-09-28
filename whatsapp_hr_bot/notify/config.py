@@ -190,7 +190,56 @@ def _reimbursement_message(doc) -> str:
     )
 
 
+def _employee_checkin_message(doc) -> str:
+    from frappe.utils import format_datetime
+
+    return (
+        f"Hello {doc.employee_name},\n\n"
+        f"Your attendance has been recorded.\n"
+        f"Check-in Type: {doc.log_type}\n"
+        f"Check-in Time: {format_datetime(doc.time)}"
+    )
+
+
+def _upcoming_holiday_message(doc) -> str:
+    from frappe.utils import formatdate
+
+    description = frappe.utils.strip_html(str(doc.description or "")).strip()
+    return (
+        f"Hello {doc.employee_name},\n\n"
+        f"Upcoming holiday: {description or 'Holiday'} on {formatdate(doc.holiday_date, 'd MMMM')}."
+    )
+
+
 NOTIFICATION_RULES = [
+    {
+        "doctype": "Employee Checkin",
+        "events": ["after_insert"],
+        "message": _employee_checkin_message,
+        "recipient": {
+            "link_field": "employee",
+            "doctype": "Employee",
+            "phone_fields": ["cell_number"],
+            "name_field": "employee_name",
+            "user_fallback_field": "user_id",
+        },
+        "preference_field": "custom_whatsapp_attendance",
+        "dedupe_key": lambda doc: "checkin",
+    },
+    {
+        "doctype": "Holiday List",
+        "events": ["daily"],
+        "message": _upcoming_holiday_message,
+        "recipient": {
+            "link_field": "employee",
+            "doctype": "Employee",
+            "phone_fields": ["cell_number"],
+            "name_field": "employee_name",
+            "user_fallback_field": "user_id",
+        },
+        "preference_field": "custom_whatsapp_hr_announcements",
+        "dedupe_key": lambda doc: f"holiday:{doc.holiday_row}:{doc.employee}",
+    },
     {
         "doctype": "Purchase Order",
         "events": ["on_submit"],

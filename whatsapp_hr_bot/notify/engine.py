@@ -47,6 +47,9 @@ DONE_STATUSES = ("Sent", "Success")
 
 def on_doc_event(doc, method=None):
     """``doc_events`` target - wired in hooks.py for each configured DocType."""
+    if getattr(doc.flags, "skip_whatsapp_notification", False):
+        return
+
     event = method
     if not get_rules(doc.doctype, event):
         return
@@ -92,6 +95,18 @@ def dispatch(doctype: str, docname: str, event: str | None = None, force: bool =
         results.append(_run_rule(doc, rule, force=force))
 
     return results
+
+
+def dispatch_to_recipient(doc, rule: dict, recipient_name: str, force: bool = False) -> dict:
+    """Dispatch a notification rule for a specific linked recipient."""
+    recipient_cfg = rule.get("recipient") or {}
+    link_field = recipient_cfg.get("link_field")
+    if not link_field:
+        return {"ok": False, "reason": "This notification has no recipient link field."}
+
+    doc_data = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
+    doc_data[link_field] = recipient_name
+    return _run_rule(frappe._dict(doc_data), rule, force=force)
 
 
 def _run_rule(doc, rule: dict, force: bool) -> dict:

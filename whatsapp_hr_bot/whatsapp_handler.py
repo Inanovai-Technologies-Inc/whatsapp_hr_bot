@@ -129,6 +129,15 @@ def handle_whatsapp_message(doc, method=None):
 
     text = normalize_text(message)
 
+    attendance_command = get_attendance_command(text)
+    if attendance_command:
+        handle_attendance_command(doc, phone, attendance_command)
+        return
+
+    if text in {"upcoming holiday", "next holiday", "holiday"}:
+        handle_upcoming_holiday_command(doc, phone)
+        return
+
     # --------------------------------------------------------
     # Main menu / restart
     # --------------------------------------------------------
@@ -591,6 +600,78 @@ def is_leave_keyword(text):
     """``text`` is expected to be normalised by ``normalize_text``."""
 
     return text in LEAVE_KEYWORDS
+
+
+def get_attendance_command(text):
+    if text in {"check-in", "check in", "check-inn", "check inn", "checkin"}:
+        return "IN"
+    if text in {"check-out", "check out", "checkout"}:
+        return "OUT"
+    return None
+
+
+def handle_attendance_command(doc, phone, log_type):
+    employee = get_employee(phone)
+    if not employee:
+        send_text(doc, "I could not find an active employee profile for your WhatsApp number. Please contact HR.")
+        return
+
+    from frappe.utils import format_datetime, now_datetime
+
+    checkin = frappe.new_doc("Employee Checkin")
+    checkin.employee = employee
+    checkin.log_type = log_type
+    checkin.time = now_datetime()
+    checkin.flags.skip_whatsapp_notification = True
+
+    try:
+        checkin.insert(ignore_permissions=True)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "WhatsApp HR Bot - Employee Checkin Failed")
+        send_text(doc, "I could not record your attendance. Please contact HR or try again later.")
+        return
+
+    send_text(
+        doc,
+        f"{log_type.title()} recorded successfully.\n"
+        f"Employee: {checkin.employee_name}\n"
+        f"Type: {log_type}\n"
+        f"Time: {format_datetime(checkin.time)}",
+    )
+
+
+def handle_upcoming_holiday_command(doc, phone):
+    employee = get_employee(phone)
+    if not employee:
+        send_text(doc, "I could not find an active employee profile for your WhatsApp number. Please contact HR.")
+        return
+
+    from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
+    from frappe.utils import formatdate
+
+    holiday_list = get_holiday_list_for_employee(employee, raise_exception=False)
+    if not holiday_list:
+        send_text(doc, "No Holiday List is assigned to your employee profile or company.")
+        return
+
+    holiday = frappe.get_all(
+        "Holiday",
+        filters={"parent": holiday_list, "holiday_date": [">=", today()]},
+        fields=["holiday_date", "description"],
+        order_by="holiday_date asc",
+        limit=1,
+    )
+    if not holiday:
+        send_text(doc, "There are no upcoming holidays on your Holiday List.")
+        return
+
+    next_holiday = holiday[0]
+    description = frappe.utils.strip_html(str(next_holiday.description or "")).strip()
+    send_text(
+        doc,
+        f"Your next holiday is {description or 'Holiday'} "
+        f"on {formatdate(next_holiday.holiday_date, 'd MMMM YYYY')}.",
+    )
 
 
 # ============================================================

@@ -313,4 +313,11 @@ doc_events = {
     "Payment Entry": {
         "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },
+    "Employee Checkin": {
+        "after_insert": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
+}
+
+scheduler_events = {
+    "daily": ["whatsapp_hr_bot.tasks.send_upcoming_holiday_notifications"],
 }
