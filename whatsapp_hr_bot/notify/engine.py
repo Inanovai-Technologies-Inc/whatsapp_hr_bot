@@ -30,13 +30,17 @@ Design notes
   so the user gets an immediate result.
 """
 
+import json
 import re
+import signal
 
 import frappe
 from frappe import _
 from frappe.utils import cint
 
 from whatsapp_hr_bot.notify.config import get_rules
+
+PDF_GENERATION_TIMEOUT_SECONDS = 20
 
 DONE_STATUSES = ("Sent", "Success")
 
@@ -227,13 +231,165 @@ def _build_send_fields(doc, rule: dict) -> dict:
     """Either a plain-text message (no template approval needed - subject
     to Meta's 24-hour session window, see config.py) or an approved
     template, depending on which the rule defines.
+
+    ``buttons`` rules (the Expense Claim approval request) send an
+    interactive message with the rule's buttons - see
+    expense_approval.py for how the recipient's tap on one is handled.
+
+    ``attach_pdf`` rules (Expense Claim, and its Payment Entry
+    reimbursement) render the document's PDF and send it as a WhatsApp
+    "document" message, with the usual message text as its caption -
+    the PDF itself is only ever generated here, i.e. at send time, from
+    a manual "Send WhatsApp" click (these rules are never wired to a
+    doc_event - see config.py), never on submit/approval/payment.
+
+    The PDF's link has to be one Meta's servers (out on the internet)
+    can fetch - that needs ``host_name`` set in site_config.json to a
+    publicly reachable URL (e.g. the ngrok/production domain), since
+    otherwise it defaults to whatever Host header the local browser
+    request used (``127.0.0.1``, ``localhost``, ...), which Meta can
+    never reach and the "document" message silently fails delivery.
+    Until that's configured, fall back to the plain-text message alone
+    (still reliable) rather than sending a document Meta can't deliver.
+
+    PDF rendering itself is also time-boxed (see
+    ``_get_pdf_attachment_url``'s docstring for why) so a slow/stuck
+    render degrades to the same reliable plain-text fallback instead of
+    leaving the "Send WhatsApp" click (and the WhatsApp Message row it's
+    building) stuck indefinitely.
     """
     if rule.get("template"):
         return {"content_type": "text", "template": rule["template"]}
 
     message_fn = rule.get("message")
     message = message_fn(doc) if message_fn else ""
+
+    buttons_fn = rule.get("buttons")
+    if buttons_fn:
+        buttons = buttons_fn(doc) if callable(buttons_fn) else buttons_fn
+        # Must be a JSON *string* here, not the python list itself - the
+        # WhatsApp Message doctype's own before_insert handles either,
+        # but frappe's own field-length validation (_validate_length)
+        # throws "Value for Buttons cannot be a list" on a raw list
+        # before before_insert even runs.
+        return {"content_type": "interactive", "message": message, "buttons": json.dumps(buttons)}
+
+    if rule.get("attach_pdf") and frappe.conf.get("host_name"):
+        try:
+            file_url = _get_pdf_attachment_url(doc, rule.get("print_format"))
+            return {"content_type": "document", "message": message, "attach": file_url}
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"WhatsApp Notify: PDF generation failed for {doc.doctype} {doc.name}",
+            )
+
     return {"content_type": "text", "message": message}
+
+
+class _PdfGenerationTimeout(Exception):
+    pass
+
+
+def _get_pdf_attachment_url(doc, print_format: str | None) -> str:
+    """Render ``doc`` to PDF (using ``print_format``, or the doctype's
+    default when ``None``) and save it as a public File attached to the
+    document, returning the URL WhatsApp's "document" message type sends
+    as its ``link`` (see ``frappe_whatsapp``'s ``send_outgoing``) - Meta's
+    servers fetch that URL directly, so the file must be public.
+
+    Bounded by ``PDF_GENERATION_TIMEOUT_SECONDS`` via SIGALRM as a last
+    resort - see ``_render_pdf_via_file`` for the actual fix.
+    """
+
+    def _raise_timeout(signum, frame):
+        raise _PdfGenerationTimeout(f"PDF generation exceeded {PDF_GENERATION_TIMEOUT_SECONDS}s")
+
+    previous_handler = signal.signal(signal.SIGALRM, _raise_timeout)
+    signal.alarm(PDF_GENERATION_TIMEOUT_SECONDS)
+    try:
+        pdf_content = _render_pdf_via_file(doc.doctype, doc.name, print_format)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+    file_doc = frappe.get_doc(
+        {
+            "doctype": "File",
+            "file_name": f"{doc.name.replace('/', '-')}.pdf",
+            "attached_to_doctype": doc.doctype,
+            "attached_to_name": doc.name,
+            "content": pdf_content,
+            "is_private": 0,
+        }
+    )
+    file_doc.insert(ignore_permissions=True)
+
+    # Absolute, built straight from host_name rather than letting
+    # frappe_whatsapp prefix it with frappe.utils.get_url() - that
+    # appends webserver_port, giving Meta ``https://<tunnel>:8001/files/...``
+    # which it cannot fetch. send_outgoing passes any attach value that
+    # already starts with "http" through untouched.
+    base = (frappe.conf.get("host_name") or "").rstrip("/")
+    return f"{base}{file_doc.file_url}"
+
+
+def _render_pdf_via_file(doctype: str, name: str, print_format: str | None) -> bytes:
+    """Render to PDF via real HTML/PDF files on disk instead of
+    ``frappe.get_print(..., as_pdf=True)``.
+
+    Deliberately does **not** call ``scrub_urls()`` the way
+    ``frappe.utils.pdf.get_pdf()`` does. ``scrub_urls`` turns the print
+    view's relative asset links into absolute ones via
+    ``frappe.utils.get_url()``, which appends ``webserver_port`` to
+    ``host_name`` - so with ``host_name`` set to the public tunnel URL it
+    produces ``https://<tunnel>:8001/assets/...``. Nothing answers on
+    that port at the tunnel's edge, and wkhtmltopdf blocks on the fetch
+    indefinitely rather than timing out. Left relative, the same links
+    simply fail to resolve against the temp file's local base (fast, no
+    network), and the print format's own CSS - which is inlined into the
+    page by frappe, not linked - still applies.
+    """
+    import os
+    import tempfile
+
+    import pdfkit
+    from frappe.utils.pdf import cleanup, prepare_options
+
+    html = frappe.get_print(doctype, name, print_format=print_format, as_pdf=False)
+    html, options = prepare_options(html, None)
+    options.update(
+        {"disable-javascript": "", "disable-local-file-access": "", "disable-smart-shrinking": ""}
+    )
+
+    tmp_html_fd, tmp_html_path = tempfile.mkstemp(suffix=".html")
+    tmp_pdf_path = f"{tmp_html_path}.pdf"
+    try:
+        with os.fdopen(tmp_html_fd, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        try:
+            pdfkit.from_file(tmp_html_path, tmp_pdf_path, options=options)
+        except OSError:
+            # wkhtmltopdf exits non-zero when an asset it couldn't fetch
+            # (the relative /assets link left un-scrubbed above) yields
+            # e.g. ProtocolUnknownError - but it still writes a complete
+            # PDF first. Same tolerance frappe's own get_pdf() applies to
+            # its PDF_CONTENT_ERRORS list; only re-raise if no usable PDF
+            # actually landed.
+            if not os.path.exists(tmp_pdf_path):
+                raise
+            with open(tmp_pdf_path, "rb") as f:
+                if f.read(4) != b"%PDF":
+                    raise
+
+        with open(tmp_pdf_path, "rb") as f:
+            return f.read()
+    finally:
+        cleanup(options)
+        for path in (tmp_html_path, tmp_pdf_path):
+            if os.path.exists(path):
+                os.remove(path)
 
 
 def _send(doc, rule: dict, dedupe_key_value: str, recipient):

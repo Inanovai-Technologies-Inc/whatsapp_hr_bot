@@ -575,6 +575,11 @@ def is_valid_button_id(value):
     if onboarding.is_onboarding_button_id(value):
         return True
 
+    from whatsapp_hr_bot import expense_approval
+
+    if expense_approval.is_expense_approval_button_id(value):
+        return True
+
     return False
 
 
@@ -793,6 +798,22 @@ def handle_button(doc, phone, button_id):
     if onboarding.is_onboarding_button_id(button_id):
 
         onboarding.handle_onboarding_message(
+            doc,
+            phone,
+            button_id
+        )
+
+        return
+
+    # ========================================================
+    # EXPENSE CLAIM APPROVAL (Approve/Reject from the approver)
+    # ========================================================
+
+    from whatsapp_hr_bot import expense_approval
+
+    if expense_approval.is_expense_approval_button_id(button_id):
+
+        expense_approval.handle_expense_approval_button(
             doc,
             phone,
             button_id

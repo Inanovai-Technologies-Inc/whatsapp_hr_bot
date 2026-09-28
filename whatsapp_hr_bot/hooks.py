@@ -289,9 +289,18 @@ doc_events = {
     "Sales Order": {
         "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },
-    # Expense Claim is intentionally NOT wired here - it sends only via
-    # the manual "Send WhatsApp" button (public/js/expense_claim.js ->
-    # api.send_now -> dispatch), never automatically on submit/approval.
+    # Expense Claim: only after_insert is wired (sends the Expense
+    # Approver the interactive Approve/Reject request the moment a claim
+    # is created in Draft - notify/config.py's "approval_requested" rule).
+    # "on_submit"/"on_update_after_submit" are deliberately NOT wired here
+    # - those two rules (the employee approved/rejected notification) only
+    # ever fire via the manual "Send WhatsApp" button (public/js/expense_
+    # claim.js -> api.send_now -> dispatch) or explicitly from
+    # expense_approval.handle_expense_approval_button, never automatically
+    # on submit/approval/payment.
+    "Expense Claim": {
+        "after_insert": "whatsapp_hr_bot.notify.engine.on_doc_event",
+    },
     "Purchase Receipt": {
         "on_submit": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },

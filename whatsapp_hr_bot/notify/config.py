@@ -101,6 +101,39 @@ def _expense_claim_message(doc, outcome: str) -> str:
     )
 
 
+def _expense_claim_grand_total(doc) -> float:
+    # Mirrors the "Expense Claim WhatsApp PDF" print format's fix: the
+    # stock ``grand_total`` field is driven by each row's sanctioned_amount
+    # (set by the approver), which is meaningless before approval - here
+    # (before the approver has acted at all) the claimed amount is the
+    # only total that means anything.
+    return (
+        (doc.get("total_claimed_amount") or 0)
+        + (doc.get("total_taxes_and_charges") or 0)
+        - (doc.get("total_advance_amount") or 0)
+    )
+
+
+def _expense_approval_request_message(doc) -> str:
+    return (
+        "New Expense Claim awaiting your approval:\n\n"
+        f"Employee: {doc.employee_name}\n"
+        f"Claim ID: {doc.name}\n"
+        f"Grand Total: {_expense_claim_grand_total(doc):,.2f}\n\n"
+        "Please Approve or Reject this claim."
+    )
+
+
+def _expense_approval_buttons(doc) -> list:
+    # button id carries the claim name after ":" - same convention as
+    # the leave flow's "leave_type:<value>" buttons (whatsapp_handler.py).
+    # Parsed back out in expense_approval.handle_expense_approval_button.
+    return [
+        {"id": f"approve_expense:{doc.name}", "title": "Approve"},
+        {"id": f"reject_expense:{doc.name}", "title": "Reject"},
+    ]
+
+
 def _purchase_receipt_message(doc) -> str:
     return (
         f"Hello {doc.supplier_name},\n\n"
@@ -186,6 +219,11 @@ NOTIFICATION_RULES = [
     },
     {
         "doctype": "Expense Claim",
+        # "on_submit"/"on_update_after_submit" are not in hooks.py's
+        # doc_events for Expense Claim, so these two rules only ever fire
+        # via the manual "Send WhatsApp" button, or explicitly from
+        # expense_approval.handle_expense_approval_button (the WhatsApp
+        # Approve/Reject action) - never automatically on submit.
         "events": ["on_submit", "on_update_after_submit"],
         "message": lambda doc: _expense_claim_message(doc, "approved"),
         "recipient": {
@@ -198,6 +236,8 @@ NOTIFICATION_RULES = [
         "preference_field": "custom_whatsapp_finance",
         "condition": lambda doc: doc.docstatus == 1 and doc.approval_status == "Approved",
         "dedupe_key": lambda doc: "approved",
+        "attach_pdf": True,
+        "print_format": "Expense Claim WhatsApp PDF",
     },
     {
         "doctype": "Expense Claim",
@@ -213,6 +253,31 @@ NOTIFICATION_RULES = [
         "preference_field": "custom_whatsapp_finance",
         "condition": lambda doc: doc.docstatus == 1 and doc.approval_status == "Rejected",
         "dedupe_key": lambda doc: "rejected",
+        "attach_pdf": True,
+        "print_format": "Expense Claim WhatsApp PDF",
+    },
+    {
+        # Sent to the Expense Approver (a User, not an Employee - hence
+        # the plain "User" recipient doctype) the moment a claim is
+        # created, whether from the desk UI or the WhatsApp chatbot's own
+        # "apply expense claim" flow (which explicitly inserts in Draft
+        # and never submits - see whatsapp_handler.py). This is the only
+        # Expense Claim rule wired to a real doc_event (after_insert, in
+        # hooks.py) - the interactive Approve/Reject buttons it sends are
+        # handled by expense_approval.handle_expense_approval_button,
+        # which is what actually moves the claim to Approved/Rejected and
+        # triggers the two rules above.
+        "doctype": "Expense Claim",
+        "events": ["after_insert"],
+        "message": _expense_approval_request_message,
+        "buttons": _expense_approval_buttons,
+        "recipient": {
+            "link_field": "expense_approver",
+            "doctype": "User",
+            "phone_fields": ["mobile_no", "phone"],
+        },
+        "condition": lambda doc: doc.docstatus == 0 and doc.approval_status == "Draft",
+        "dedupe_key": lambda doc: "approval_requested",
     },
     {
         # Confirms to the supplier that the goods against their
@@ -301,7 +366,14 @@ NOTIFICATION_RULES = [
         # message, employee phone resolution (cell_number, falling
         # back to the linked User) like the Expense Claim rules above.
         "doctype": "Payment Entry",
-        "events": ["on_submit"],
+        # No "on_submit" here (unlike every other Payment Entry/rule
+        # above): the reimbursement confirmation + PDF must only go out
+        # when someone clicks "Send WhatsApp" on the Payment Entry, never
+        # automatically on payment. get_rules(..., event=None) - used by
+        # the manual button - ignores this list, so the button still
+        # works; only the doc_events-triggered on_submit lookup (which
+        # filters by event) skips this rule.
+        "events": [],
         "message": _reimbursement_message,
         "recipient": {
             "link_field": "party",
@@ -314,6 +386,10 @@ NOTIFICATION_RULES = [
         and doc.payment_type == "Pay"
         and doc.party_type == "Employee",
         "dedupe_key": lambda doc: "pay_employee",
+        # Attach the (default) Payment Entry PDF, same mechanism as the
+        # Expense Claim rules above.
+        "attach_pdf": True,
+        "print_format": None,
     },
 ]
 
