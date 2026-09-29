@@ -274,11 +274,22 @@ doctype_js = {
 fixtures = [
     {"doctype": "Custom Field", "filters": [["dt", "=", "WhatsApp Message"], ["fieldname", "like", "custom_%"]]},
     {"doctype": "Custom Field", "filters": [["dt", "=", "Employee"], ["fieldname", "like", "custom_whatsapp_%"]]},
+    # Bill/receipt proof on Expense Claim - see expense_attachment.py.
+    {"doctype": "Custom Field", "filters": [["dt", "=", "Expense Claim"], ["fieldname", "like", "custom_bill_%"]]},
 ]
 
 doc_events = {
     "WhatsApp Message": {
         "after_insert": "whatsapp_hr_bot.whatsapp_handler.handle_whatsapp_message"
+    },
+    # An inbound file (the optional bill/receipt for an expense claim in
+    # progress) only exists once frappe_whatsapp has downloaded it into a
+    # File - which it does *after* inserting the WhatsApp Message above,
+    # so the handler there cannot see it. Every File created on the site
+    # goes through here; anything not attached to a WhatsApp Message
+    # returns on the first check.
+    "File": {
+        "after_insert": "whatsapp_hr_bot.whatsapp_handler.handle_inbound_whatsapp_file",
     },
     # Generic WhatsApp notifications (notify/config.py, notify/engine.py) -
     # every configured DocType/event routes to the same handler; add a
@@ -298,7 +309,14 @@ doc_events = {
     # claim.js -> api.send_now -> dispatch) or explicitly from
     # expense_approval.handle_expense_approval_button, never automatically
     # on submit/approval/payment.
+    # "validate"/"before_update_after_submit" are the bill/receipt proof
+    # field (expense_attachment.py) - format check only, no notification.
+    # ("validate" does not run for a save after submit, hence the second
+    # event: the field is allow_on_submit, so proof can still be added to
+    # an already-submitted claim.)
     "Expense Claim": {
+        "validate": "whatsapp_hr_bot.expense_attachment.validate_bill_attachment",
+        "before_update_after_submit": "whatsapp_hr_bot.expense_attachment.validate_bill_attachment",
         "after_insert": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },
     "Purchase Receipt": {

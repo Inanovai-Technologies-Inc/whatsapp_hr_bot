@@ -192,5 +192,26 @@
   "fieldtype": "Check",
   "default": "1",
   "insert_after": "custom_whatsapp_finance"
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Expense Claim-custom_bill_proof_section",
+  "dt": "Expense Claim",
+  "fieldname": "custom_bill_proof_section",
+  "label": "Bill / Receipt Proof",
+  "fieldtype": "Section Break",
+  "insert_after": "expenses",
+  "collapsible": 0
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Expense Claim-custom_bill_attachment",
+  "dt": "Expense Claim",
+  "fieldname": "custom_bill_attachment",
+  "label": "Bill / Receipt",
+  "fieldtype": "Attach",
+  "insert_after": "custom_bill_proof_section",
+  "allow_on_submit": 1,
+  "description": "Upload the bill or receipt as proof. Allowed formats: PDF, JPG, JPEG, PNG."
  }
 ]

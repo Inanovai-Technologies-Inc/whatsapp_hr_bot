@@ -36,6 +36,38 @@ LEAVE_KEYWORDS = [
     "new leave",
 ]
 
+# Step of the expense claim flow that offers the optional bill/receipt
+# upload, between "remark" and "confirmation".
+
+BILL_STEP = "bill_attachment"
+
+# Replies that decline the optional bill/receipt. Kept separate from the
+# confirm/cancel words: at BILL_STEP "no" means "continue without an
+# attachment", never "cancel the claim".
+
+SKIP_BILL_WORDS = [
+    "no",
+    "n",
+    "nope",
+    "skip",
+    "no thanks",
+    "no thank you",
+    "not now",
+    "later",
+    "continue",
+]
+
+# Inbound content types that carry a file. frappe_whatsapp downloads
+# these into a File attached to the WhatsApp Message (its
+# utils/webhook.py), which handle_inbound_whatsapp_file picks up.
+
+MEDIA_CONTENT_TYPES = [
+    "image",
+    "document",
+    "audio",
+    "video",
+]
+
 
 # ============================================================
 # MAIN WHATSAPP MESSAGE HANDLER
@@ -407,6 +439,15 @@ def extract_button_id(doc):
             normalized = normalize_text(message)
 
             if flow == "expense_claim":
+
+                # At the bill/receipt step "No" means "continue
+                # without an attachment", not "cancel the claim" - that
+                # step parses those replies itself in
+                # handle_expense_claim_flow. Everything else, "cancel"
+                # included, keeps working from this step as before.
+
+                if step == BILL_STEP and normalized in SKIP_BILL_WORDS:
+                    return None
 
                 if normalized in ["confirm", "yes", "submit"]:
                     return "confirm_expense_claim"
@@ -2360,26 +2401,60 @@ def handle_expense_claim_flow(doc, phone, message):
             return
 
         state["remark"] = remark
-        state["step"] = "confirmation"
+        state["step"] = BILL_STEP
 
         set_state(
             phone,
             state
         )
 
-        send_interactive(
+        send_text(
             doc,
-            build_expense_claim_confirmation_message(state),
-            [
-                {
-                    "id": "confirm_expense_claim",
-                    "title": "Confirm"
-                },
-                {
-                    "id": "cancel_expense_claim",
-                    "title": "Cancel"
-                }
-            ]
+            "Would you like to attach a bill/receipt for this expense?\n\n"
+            "Please send the file, or reply *No* to continue without an "
+            "attachment."
+        )
+
+        return
+
+    # ========================================================
+    # BILL / RECEIPT (OPTIONAL)
+    #
+    # The file itself never arrives here: media is delivered as a
+    # File attached to the inbound WhatsApp Message a moment later
+    # in the same webhook request, and is picked up by
+    # handle_inbound_whatsapp_file. This step only handles what the
+    # employee *types* - "No" to skip, anything else a re-prompt.
+    # ========================================================
+
+    if step == BILL_STEP:
+
+        if (doc.get("content_type") or "").strip().lower() in MEDIA_CONTENT_TYPES:
+
+            # A caption sent alongside the file - ignored, so the
+            # employee gets one reply (the file's) instead of two.
+
+            return
+
+        normalized = normalize_text(message)
+
+        if normalized in SKIP_BILL_WORDS:
+
+            state["bill_file"] = None
+            state["bill_file_name"] = None
+
+            send_expense_claim_confirmation(
+                doc,
+                phone,
+                state
+            )
+
+            return
+
+        send_text(
+            doc,
+            "Please send the bill/receipt as a PDF, JPG, JPEG or PNG "
+            "file, or reply *No* to continue without an attachment."
         )
 
         return
@@ -2440,10 +2515,154 @@ def handle_expense_claim_flow(doc, phone, message):
 
 
 # ============================================================
+# INBOUND FILE (BILL / RECEIPT)
+# ============================================================
+
+def handle_inbound_whatsapp_file(file_doc, method=None):
+    """``File`` after_insert - take an inbound WhatsApp file as the
+    bill/receipt for the expense claim its sender is in the middle of.
+
+    frappe_whatsapp inserts the inbound WhatsApp Message first and only
+    then downloads the media into a File attached to it (its
+    utils/webhook.py), so the file does not exist yet when
+    handle_whatsapp_message runs on that message's after_insert - this
+    hook is the first point where it does. Every other File created on
+    the site returns on the first check.
+    """
+
+    if file_doc.get("attached_to_doctype") != "WhatsApp Message":
+        return
+
+    if not file_doc.get("attached_to_name"):
+        return
+
+    try:
+
+        handle_expense_bill_file(file_doc)
+
+    except Exception:
+
+        # An inbound file must never break the conversation or the
+        # WhatsApp Message / File records it arrived on.
+
+        frappe.log_error(
+            frappe.get_traceback(),
+            "WhatsApp HR Bot - Expense Bill Attachment Error"
+        )
+
+
+def handle_expense_bill_file(file_doc):
+
+    message = frappe.get_doc(
+        "WhatsApp Message",
+        file_doc.attached_to_name
+    )
+
+    if message.get("type") != "Incoming":
+        return
+
+    phone = str(
+        message.get("from") or ""
+    ).strip()
+
+    if not phone:
+        return
+
+    state = get_state(phone)
+
+    # Only the expense claim flow's bill step takes files. Anywhere
+    # else - no session, the leave or onboarding flows, an earlier or
+    # later expense step - an inbound file is ignored, as before.
+
+    if not state:
+        return
+
+    if state.get("flow") != "expense_claim":
+        return
+
+    if state.get("step") != BILL_STEP:
+        return
+
+    from whatsapp_hr_bot import expense_attachment
+
+    file_name = (
+        file_doc.get("file_name")
+        or file_doc.get("file_url")
+        or ""
+    )
+
+    if not expense_attachment.is_allowed_bill_file(file_name):
+
+        send_text(
+            message,
+            "❌ Unsupported file type.\n\n"
+            "Please send the bill/receipt as a PDF, JPG, JPEG or PNG "
+            "file, or reply *No* to continue without an attachment."
+        )
+
+        return
+
+    # Only remembered on the session here: the File that ends up on the
+    # claim is created from this one when the claim is confirmed
+    # (expense_attachment.stage_bill_file), so a claim that is never
+    # confirmed leaves nothing behind.
+
+    state["bill_file"] = file_doc.name
+    state["bill_file_name"] = file_name
+
+    send_expense_claim_confirmation(
+        message,
+        phone,
+        state
+    )
+
+
+# ============================================================
 # EXPENSE CLAIM CONFIRMATION MESSAGE
 # ============================================================
 
+def send_expense_claim_confirmation(doc, phone, state):
+
+    state["step"] = "confirmation"
+
+    set_state(
+        phone,
+        state
+    )
+
+    send_interactive(
+        doc,
+        build_expense_claim_confirmation_message(state),
+        [
+            {
+                "id": "confirm_expense_claim",
+                "title": "Confirm"
+            },
+            {
+                "id": "cancel_expense_claim",
+                "title": "Cancel"
+            }
+        ]
+    )
+
+
 def build_expense_claim_confirmation_message(state):
+
+    # frappe_whatsapp names inbound media after a random hash (its
+    # utils/webhook.py), so the stored file name means nothing to the
+    # employee - show the format they sent instead.
+
+    bill_file_name = state.get("bill_file_name")
+
+    if bill_file_name:
+
+        bill_label = "Attached ({0})".format(
+            bill_file_name.rsplit(".", 1)[-1].upper()
+        )
+
+    else:
+
+        bill_label = "Not attached"
 
     return (
         "Please confirm your expense claim:\n\n"
@@ -2451,7 +2670,8 @@ def build_expense_claim_confirmation_message(state):
         f"Date: {state.get('expense_date')}\n"
         f"Description: {state.get('description')}\n"
         f"Amount: {flt(state.get('amount')):g}\n"
-        f"Remark: {state.get('remark')}\n\n"
+        f"Remark: {state.get('remark')}\n"
+        f"Bill/Receipt: {bill_label}\n\n"
         "Do you want to submit this claim?"
     )
 
@@ -2531,6 +2751,26 @@ def process_expense_claim_confirmation(doc, phone, button_id):
         amount = flt(state.get("amount"))
         remark = state.get("remark")
 
+        # ----------------------------------------------------
+        # Optional bill/receipt from BILL_STEP, copied into a
+        # private File now so the claim is inserted with its
+        # proof already on it - see
+        # expense_attachment.stage_bill_file. A file that has
+        # gone missing, or whose type is not allowed, yields
+        # None and the claim is created without an attachment
+        # rather than failing.
+        # ----------------------------------------------------
+
+        bill_file_url = None
+
+        if state.get("bill_file"):
+
+            from whatsapp_hr_bot import expense_attachment
+
+            bill_file_url = expense_attachment.stage_bill_file(
+                state.get("bill_file")
+            )
+
         # ====================================================
         # CREATE EXPENSE CLAIM
         #
@@ -2554,6 +2794,7 @@ def process_expense_claim_confirmation(doc, phone, button_id):
                 "posting_date": str(expense_date),
                 "approval_status": "Draft",
                 "remark": remark,
+                "custom_bill_attachment": bill_file_url,
                 "expenses": [
                     {
                         "expense_date": str(expense_date),
