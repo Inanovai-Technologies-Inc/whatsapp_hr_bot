@@ -98,6 +98,12 @@ doctype_js = {
 # before_install = "whatsapp_hr_bot.install.before_install"
 # after_install = "whatsapp_hr_bot.install.after_install"
 
+# Create (and submit to Meta) the template that reaches an Expense
+# Approver outside Meta's 24-hour window. Idempotent, and it never raises,
+# so a site without WhatsApp configured migrates as before - see
+# notify/templates.py.
+after_migrate = ["whatsapp_hr_bot.notify.templates.ensure_expense_approval_template"]
+
 # Uninstallation
 # ------------
 
@@ -276,6 +282,21 @@ fixtures = [
     {"doctype": "Custom Field", "filters": [["dt", "=", "Employee"], ["fieldname", "like", "custom_whatsapp_%"]]},
     # Bill/receipt proof on Expense Claim - see expense_attachment.py.
     {"doctype": "Custom Field", "filters": [["dt", "=", "Expense Claim"], ["fieldname", "like", "custom_bill_%"]]},
+    # The currency an Expense Claim's amounts are in - see
+    # expense_currency.py.
+    {"doctype": "Custom Field", "filters": [["dt", "=", "Expense Claim"], ["fieldname", "like", "custom_expense_%"]]},
+    # ...and the Property Setters that make Expense Claim's Currency
+    # fields read their currency from that field instead of the company's
+    # default, so a claim raised in USD displays in USD. Same
+    # expense_currency.py.
+    {
+        "doctype": "Property Setter",
+        "filters": [
+            ["doc_type", "in", ["Expense Claim", "Expense Claim Detail"]],
+            ["property", "=", "options"],
+            ["value", "=", "custom_expense_currency"],
+        ],
+    },
 ]
 
 doc_events = {
@@ -290,6 +311,13 @@ doc_events = {
     # returns on the first check.
     "File": {
         "after_insert": "whatsapp_hr_bot.whatsapp_handler.handle_inbound_whatsapp_file",
+    },
+    # Why a delivery report ("failed") means what it means. frappe_whatsapp
+    # logs every webhook payload here and then keeps only the status off
+    # it, dropping Meta's error code and explanation - see
+    # notify.delivery.record_delivery_error.
+    "WhatsApp Notification Log": {
+        "after_insert": "whatsapp_hr_bot.notify.delivery.record_delivery_error",
     },
     # Generic WhatsApp notifications (notify/config.py, notify/engine.py) -
     # every configured DocType/event routes to the same handler; add a
@@ -315,7 +343,14 @@ doc_events = {
     # event: the field is allow_on_submit, so proof can still be added to
     # an already-submitted claim.)
     "Expense Claim": {
-        "validate": "whatsapp_hr_bot.expense_attachment.validate_bill_attachment",
+        "validate": [
+            "whatsapp_hr_bot.expense_attachment.validate_bill_attachment",
+            # Every claim names the currency its amounts are in, because
+            # the Property Setters above make every Currency field on the
+            # doctype read it. A desk-created claim gets the company's
+            # default currency and so renders exactly as before.
+            "whatsapp_hr_bot.expense_currency.set_default_currency",
+        ],
         "before_update_after_submit": "whatsapp_hr_bot.expense_attachment.validate_bill_attachment",
         "after_insert": "whatsapp_hr_bot.notify.engine.on_doc_event",
     },

@@ -1,0 +1,82 @@
+[
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim-total_claimed_amount-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim",
+  "field_name": "total_claimed_amount",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim-total_sanctioned_amount-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim",
+  "field_name": "total_sanctioned_amount",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim-total_taxes_and_charges-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim",
+  "field_name": "total_taxes_and_charges",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim-total_advance_amount-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim",
+  "field_name": "total_advance_amount",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim-total_amount_reimbursed-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim",
+  "field_name": "total_amount_reimbursed",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim-grand_total-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim",
+  "field_name": "grand_total",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim Detail-amount-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim Detail",
+  "field_name": "amount",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ },
+ {
+  "doctype": "Property Setter",
+  "name": "Expense Claim Detail-sanctioned_amount-options",
+  "doctype_or_field": "DocField",
+  "doc_type": "Expense Claim Detail",
+  "field_name": "sanctioned_amount",
+  "property": "options",
+  "property_type": "Text",
+  "value": "custom_expense_currency"
+ }
+]

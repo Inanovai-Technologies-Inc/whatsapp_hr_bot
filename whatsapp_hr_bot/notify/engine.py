@@ -38,6 +38,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 
+from whatsapp_hr_bot.notify import delivery
 from whatsapp_hr_bot.notify.config import get_rules
 
 PDF_GENERATION_TIMEOUT_SECONDS = 20
@@ -242,10 +243,22 @@ def _already_sent(doctype: str, docname: str, dedupe_key_value: str) -> bool:
     )
 
 
-def _build_send_fields(doc, rule: dict) -> dict:
+def _build_send_fields(doc, rule: dict, recipient=None) -> dict:
     """Either a plain-text message (no template approval needed - subject
     to Meta's 24-hour session window, see config.py) or an approved
     template, depending on which the rule defines.
+
+    ``fallback_template`` rules take the template road *instead* when the
+    recipient is outside that window, because nothing else can reach them
+    there: Meta drops a free-form or interactive message with error
+    131047. That is the Expense Approver's normal situation - they are not
+    someone who chats with the bot - so their approval request would
+    otherwise be accepted by Meta's API and never arrive. The rule's own
+    ``template_params`` builds the template's body parameters; the buttons
+    come from the approved template itself, and the reply to one is
+    matched back to this document by ``expense_approval.resolve_template_reply``.
+    Used only once Meta has actually approved the template - see
+    ``delivery.get_approved_template``.
 
     ``buttons`` rules (the Expense Claim approval request) send an
     interactive message with the rule's buttons - see
@@ -275,6 +288,20 @@ def _build_send_fields(doc, rule: dict) -> dict:
     """
     if rule.get("template"):
         return {"content_type": "text", "template": rule["template"]}
+
+    if rule.get("fallback_template") and recipient and recipient.phone:
+        if not delivery.is_within_service_window(recipient.phone):
+            template = delivery.get_approved_template(rule["fallback_template"])
+
+            if template:
+                fields = {"content_type": "text", "template": template}
+
+                params_fn = rule.get("template_params")
+
+                if params_fn:
+                    fields["body_param"] = json.dumps(params_fn(doc))
+
+                return fields
 
     message_fn = rule.get("message")
     message = message_fn(doc) if message_fn else ""
@@ -419,7 +446,7 @@ def _send(doc, rule: dict, dedupe_key_value: str, recipient):
             "custom_recipient_doctype": recipient.recipient_doctype,
             "custom_recipient": recipient.recipient_name,
             "custom_recipient_name": recipient.display_name,
-            **_build_send_fields(doc, rule),
+            **_build_send_fields(doc, rule, recipient),
         }
     )
     # WhatsAppMessage.before_insert sends the message/template via the
@@ -430,13 +457,126 @@ def _send(doc, rule: dict, dedupe_key_value: str, recipient):
     # frappe_whatsapp sets its own status ("Success", or nothing for a
     # template send) - normalise to "Sent" here so every row in this
     # log uses the same Pending/Sent/Failed vocabulary.
-    frappe.db.set_value(
-        "WhatsApp Message",
-        wa_message.name,
-        {"status": "Sent", "custom_sent_at": frappe.utils.now_datetime()},
-    )
+    #
+    # "Sent" means Meta's API accepted the message, not that it arrived:
+    # Meta reports delivery asynchronously and overwrites this with
+    # "delivered"/"read"/"failed". A recipient outside Meta's 24-hour
+    # window is accepted here and dropped a moment later (error 131047),
+    # so that gets noted on the row now rather than leaving a bare
+    # "failed" behind - see notify/delivery.py.
+    # Read off the message rather than the rule: a fallback_template rule
+    # sends a template only when the recipient is out of window, so only
+    # the message itself knows which road was taken.
+    _mark_sent(wa_message.name, recipient.phone, is_template=bool(wa_message.template))
+
+    if rule.get("attach_bill"):
+        # Never allowed to fail the rule: the notification above has
+        # already been delivered and logged by this point.
+        try:
+            _send_bill_attachment(doc, dedupe_key_value, recipient)
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"WhatsApp Notify: bill attachment failed for {doc.doctype} {doc.name}",
+            )
 
     return wa_message
+
+
+def _mark_sent(message_name: str, phone: str, is_template: bool = False) -> None:
+    """Normalise a just-sent row to "Sent", and note the one thing that
+    will silently undo it.
+
+    "Sent" means Meta's API accepted the message, not that it arrived:
+    Meta reports delivery asynchronously and overwrites this with
+    "delivered"/"read"/"failed". A recipient outside Meta's 24-hour window
+    is accepted here and dropped a moment later with error 131047, so that
+    is written onto the row now - otherwise the row ends up saying
+    "failed" with no reason on it. Templates are exempt: they are the one
+    thing Meta *will* deliver outside the window. See notify/delivery.py.
+    """
+    update = {"status": "Sent", "custom_sent_at": frappe.utils.now_datetime()}
+
+    if not is_template:
+        out_of_window = delivery.explain_unreachable(phone)
+
+        if out_of_window:
+            update["custom_error"] = out_of_window[:1000]
+
+    frappe.db.set_value("WhatsApp Message", message_name, update)
+
+
+def _send_bill_attachment(doc, dedupe_key_value: str, recipient) -> None:
+    """Follow an ``attach_bill`` rule's message with the document's
+    bill/receipt as a second, media message.
+
+    A second message rather than an attachment on the first one because
+    the rule this exists for - the Expense Claim approval request - sends
+    an ``interactive`` message, and WhatsApp's interactive types carry no
+    media (see frappe_whatsapp's ``send_outgoing``): the Approve/Reject
+    buttons and the bill cannot travel together. The main notification
+    goes first and this runs after it, so a missing/undeliverable bill
+    can only ever cost the approver the attachment, never the request.
+
+    Logged under its own ``<event>:bill`` dedupe key, so re-running the
+    rule doesn't re-send the bill and a failure to send it is visible in
+    the WhatsApp Message log next to the notification it belongs to.
+    Never raises.
+    """
+    from whatsapp_hr_bot import expense_attachment
+
+    bill_dedupe_key = f"{dedupe_key_value}:bill"
+
+    if _already_sent(doc.doctype, doc.name, bill_dedupe_key):
+        return
+
+    try:
+        link = expense_attachment.get_bill_delivery_url(doc)
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"WhatsApp Notify: bill lookup failed for {doc.doctype} {doc.name}",
+        )
+        return
+
+    if not link:
+        # No bill on the document, or no publicly reachable host_name to
+        # serve it from - see get_bill_delivery_url.
+        return
+
+    fields = {
+        "doctype": "WhatsApp Message",
+        "type": "Outgoing",
+        "to": recipient.phone,
+        "content_type": expense_attachment.get_bill_media_type(link),
+        "message": _("Bill / receipt attached to {0} {1}.").format(_(doc.doctype), doc.name),
+        "attach": link,
+        "reference_doctype": doc.doctype,
+        "reference_name": doc.name,
+        "custom_notification_event": bill_dedupe_key,
+        "custom_recipient_doctype": recipient.recipient_doctype,
+        "custom_recipient": recipient.recipient_name,
+        "custom_recipient_name": recipient.display_name,
+    }
+
+    try:
+        bill_message = frappe.get_doc(dict(fields))
+        bill_message.insert(ignore_permissions=True)
+    except Exception as e:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"WhatsApp Notify: bill send failed for {doc.doctype} {doc.name}",
+        )
+        # Same reason _create_failed_log builds its row from scratch and
+        # writes it with db_insert: insert() would re-attempt the send
+        # that just failed.
+        failed = frappe.get_doc(
+            dict(fields, status="Failed", custom_error=str(e)[:1000], custom_sent_at=frappe.utils.now_datetime())
+        )
+        failed.db_insert()
+        return
+
+    _mark_sent(bill_message.name, recipient.phone)
 
 
 def _create_failed_log(doc, rule: dict, dedupe_key_value: str, recipient, error):

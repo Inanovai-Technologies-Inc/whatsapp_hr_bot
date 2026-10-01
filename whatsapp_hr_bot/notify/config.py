@@ -26,6 +26,13 @@ Each rule maps a DocType + one or more doc events to:
   document" (e.g. Expense Claim approved vs rejected), so repeated
   triggers of the same event never create duplicate messages while a
   genuinely different outcome still gets its own message.
+- an optional ``attach_bill`` - send the document's bill/receipt
+  (``custom_bill_attachment``, see expense_attachment.py) to the same
+  recipient as a second, media message right after this rule's own. Used
+  by the Expense Claim approval request, whose interactive Approve/Reject
+  message cannot carry an attachment itself; see
+  ``engine._send_bill_attachment``. Unrelated to ``attach_pdf``, which
+  attaches a rendered print format to the rule's own message.
 - an optional ``preference_field`` - an Employee Check fieldname the
   recipient must have enabled (or leave unset/missing) for the message
   to send; see ``engine._run_rule``. Backed by the "WhatsApp
@@ -72,6 +79,9 @@ event(s) at ``whatsapp_hr_bot.notify.engine.on_doc_event`` in
                          phone_fields has a value.
 """
 
+import frappe
+
+
 def _po_message(doc) -> str:
     return (
         f"Hello {doc.supplier_name},\n\n"
@@ -92,21 +102,42 @@ def _so_message(doc) -> str:
     )
 
 
+def _expense_claim_currency(doc) -> str:
+    """Currency this claim's amounts are in - ``custom_expense_currency``,
+    which the employee picked over WhatsApp and every Currency field on
+    the doctype now reads (see expense_currency.py). Named in the message
+    so a claim raised in USD is never read as rupees.
+    """
+    from whatsapp_hr_bot import expense_currency
+
+    return expense_currency.get_claim_currency(doc)
+
+
 def _expense_claim_message(doc, outcome: str) -> str:
     return (
         f"Hello {doc.employee_name},\n\n"
         f"Your Expense Claim *{doc.name}* has been {outcome}.\n"
-        f"Amount: {doc.get('total_claimed_amount', 0):,.2f}\n\n"
+        f"Amount: {_expense_claim_currency(doc)} {doc.get('total_claimed_amount', 0):,.2f}\n\n"
         + ("It will be processed for payment shortly." if outcome == "approved" else "Please contact HR for details.")
     )
 
 
 def _expense_claim_grand_total(doc) -> float:
-    # Mirrors the "Expense Claim WhatsApp PDF" print format's fix: the
-    # stock ``grand_total`` field is driven by each row's sanctioned_amount
-    # (set by the approver), which is meaningless before approval - here
-    # (before the approver has acted at all) the claimed amount is the
-    # only total that means anything.
+    # The stock ``grand_total`` is driven by each row's sanctioned_amount.
+    # Every claim this app creates now sets that to the claimed amount -
+    # the same default the desk form applies (see whatsapp_handler.py's
+    # expense claim creation) - so grand_total is correct from the moment
+    # the claim is inserted, and is what gets reported here.
+    #
+    # The fallback covers claims created before that, and any other route
+    # that leaves sanctioned_amount at 0: there the claimed amount is the
+    # only total that means anything. Same fallback the "Expense Claim
+    # WhatsApp PDF" print format applies.
+    grand_total = doc.get("grand_total") or 0
+
+    if grand_total:
+        return grand_total
+
     return (
         (doc.get("total_claimed_amount") or 0)
         + (doc.get("total_taxes_and_charges") or 0)
@@ -114,17 +145,56 @@ def _expense_claim_grand_total(doc) -> float:
     )
 
 
-def _expense_approval_request_message(doc) -> str:
+def expense_approval_request_message(doc) -> str:
     return (
         "New Expense Claim awaiting your approval:\n\n"
         f"Employee: {doc.employee_name}\n"
         f"Claim ID: {doc.name}\n"
-        f"Grand Total: {_expense_claim_grand_total(doc):,.2f}\n\n"
+        f"Grand Total: {_expense_claim_currency(doc)} {_expense_claim_grand_total(doc):,.2f}\n\n"
         "Please Approve or Reject this claim."
     )
 
 
-def _expense_approval_buttons(doc) -> list:
+# The template used to reach an Expense Approver whose 24-hour window is
+# shut - named as Meta knows it, since the record's own name depends on the
+# language the doctype appended. Created and submitted by
+# notify/templates.py; until Meta approves it the engine keeps sending the
+# interactive message instead.
+from whatsapp_hr_bot.notify.templates import TEMPLATE_ACTUAL_NAME as EXPENSE_APPROVAL_TEMPLATE
+
+
+def expense_approval_template_params(doc) -> dict:
+    """Body parameters for :data:`EXPENSE_APPROVAL_TEMPLATE`, in order.
+
+    Meta rejects a parameter that is empty or carries a newline, so every
+    one of these is a single non-empty line. The bill goes in as a link
+    rather than an attachment: a template's media has to be declared in
+    its header, which would mean one template for claims with a bill and
+    another for claims without.
+    """
+    from whatsapp_hr_bot import expense_attachment
+
+    bill = None
+
+    try:
+        bill = expense_attachment.get_bill_delivery_url(doc)
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"WhatsApp Notify: bill link failed for {doc.doctype} {doc.name}",
+        )
+
+    return {
+        "employee_name": doc.employee_name or doc.employee,
+        "claim_id": doc.name,
+        "grand_total": (
+            f"{_expense_claim_currency(doc)} {_expense_claim_grand_total(doc):,.2f}"
+        ),
+        "bill": bill or "not attached",
+    }
+
+
+def expense_approval_buttons(doc) -> list:
     # button id carries the claim name after ":" - same convention as
     # the leave flow's "leave_type:<value>" buttons (whatsapp_handler.py).
     # Parsed back out in expense_approval.handle_expense_approval_button.
@@ -318,8 +388,8 @@ NOTIFICATION_RULES = [
         # triggers the two rules above.
         "doctype": "Expense Claim",
         "events": ["after_insert"],
-        "message": _expense_approval_request_message,
-        "buttons": _expense_approval_buttons,
+        "message": expense_approval_request_message,
+        "buttons": expense_approval_buttons,
         "recipient": {
             "link_field": "expense_approver",
             "doctype": "User",
@@ -327,6 +397,25 @@ NOTIFICATION_RULES = [
         },
         "condition": lambda doc: doc.docstatus == 0 and doc.approval_status == "Draft",
         "dedupe_key": lambda doc: "approval_requested",
+        # The approver decides on the claim from this message, so they get
+        # the employee's own bill/receipt with it - the very file attached
+        # to the claim, sent as a second (media) message because an
+        # interactive one carries no attachment. See
+        # engine._send_bill_attachment and
+        # expense_attachment.get_bill_delivery_url; a claim with no bill
+        # simply sends the request alone, as before.
+        "attach_bill": True,
+        # An Expense Approver is not someone who chats with the bot, so
+        # their 24-hour window is usually shut - and Meta drops a
+        # free-form or interactive message sent into that with error
+        # 131047, after its API has already accepted it. This template is
+        # the only thing it will deliver there. The engine uses it instead
+        # of the interactive message exactly when the approver is out of
+        # window and Meta has approved it (engine._build_send_fields), and
+        # a tap on its Approve/Reject buttons comes back through
+        # expense_approval.resolve_template_reply.
+        "fallback_template": EXPENSE_APPROVAL_TEMPLATE,
+        "template_params": expense_approval_template_params,
     },
     {
         # Confirms to the supplier that the goods against their

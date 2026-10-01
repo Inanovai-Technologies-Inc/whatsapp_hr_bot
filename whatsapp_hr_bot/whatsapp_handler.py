@@ -171,6 +171,31 @@ def handle_whatsapp_message(doc, method=None):
         return
 
     # --------------------------------------------------------
+    # Expense approvals, pulled by the approver
+    #
+    # Checked here, before the session/state routing below, for the
+    # same reason the greeting is: it has to work as a way in even
+    # when the sender has a conversation open. An approver messaging
+    # the bot at all is what re-opens Meta's 24-hour window, so this
+    # is how an approval request that Meta refused to deliver
+    # actually reaches them - see expense_approval.py.
+    #
+    # Only recognised for a number that belongs to somebody actually
+    # named as an Expense Approver, so for everybody else "approvals"
+    # falls through to the existing handling untouched.
+    # --------------------------------------------------------
+
+    from whatsapp_hr_bot import expense_approval
+
+    if expense_approval.is_pending_approval_keyword(text) and (
+        expense_approval.is_expense_approver(phone)
+    ):
+
+        expense_approval.send_pending_approvals(doc, phone)
+
+        return
+
+    # --------------------------------------------------------
     # Main menu / restart
     # --------------------------------------------------------
 
@@ -374,6 +399,24 @@ def extract_button_id(doc):
 
     except Exception:
         pass
+
+    # --------------------------------------------------------
+    # Quick Reply on an approved template
+    #
+    # Checked before the text fallbacks below because there is nothing
+    # in the message itself to match on: a template's buttons carry only
+    # their label ("Approve"), and which Expense Claim it belongs to
+    # comes from the message it replies to. See
+    # expense_approval.resolve_template_reply - it returns None for
+    # every other inbound message.
+    # --------------------------------------------------------
+
+    from whatsapp_hr_bot import expense_approval
+
+    template_reply = expense_approval.resolve_template_reply(doc)
+
+    if template_reply:
+        return template_reply
 
     # --------------------------------------------------------
     # Fallback to message
@@ -618,6 +661,11 @@ def is_valid_button_id(value):
         return True
 
     if value.startswith("expense_type:"):
+        return True
+
+    from whatsapp_hr_bot import expense_currency
+
+    if value.startswith(expense_currency.CURRENCY_BUTTON_PREFIX):
         return True
 
     from whatsapp_hr_bot import onboarding
@@ -1112,6 +1160,10 @@ def handle_button(doc, phone, button_id):
                 # see handle_whatsapp_message's routing on "flow".
                 "flow": "expense_claim",
                 "employee": employee,
+                # The currency every amount on the claim ends up stored
+                # in, whatever the employee enters it in - see
+                # expense_currency.py.
+                "company_currency": get_session_company_currency(employee),
                 "step": "expense_type"
             }
         )
@@ -1120,6 +1172,27 @@ def handle_button(doc, phone, button_id):
             doc,
             "Please select the expense type:",
             buttons
+        )
+
+        return
+
+    # ========================================================
+    # DYNAMIC EXPENSE CURRENCY
+    #
+    # The currency step is offered as an interactive list (more than
+    # three options), whose reply frappe_whatsapp delivers exactly like
+    # a button reply - so it lands here and is handed straight to the
+    # flow, same as the expense type below.
+    # ========================================================
+
+    from whatsapp_hr_bot import expense_currency
+
+    if button_id.startswith(expense_currency.CURRENCY_BUTTON_PREFIX):
+
+        handle_expense_claim_flow(
+            doc,
+            phone,
+            button_id
         )
 
         return
@@ -1469,6 +1542,8 @@ def build_expense_claim_status_message(employee):
             "expense_approver",
             "total_claimed_amount",
             "posting_date",
+            "company",
+            "custom_expense_currency",
         ],
         order_by="creation desc",
         limit_page_length=5
@@ -1486,6 +1561,8 @@ def build_expense_claim_status_message(employee):
         "Rejected": "❌",
     }
 
+    from whatsapp_hr_bot import expense_currency
+
     for claim in claims:
 
         icon = status_icons.get(claim.approval_status, "•")
@@ -1500,9 +1577,14 @@ def build_expense_claim_status_message(employee):
                 "full_name"
             )
 
+        amount = expense_currency.format_money(
+            claim.total_claimed_amount,
+            expense_currency.get_claim_currency(claim)
+        )
+
         message += (
             f"{claim.name}\n"
-            f"Amount: {flt(claim.total_claimed_amount):g}\n"
+            f"Amount: {amount}\n"
             f"Date: {claim.posting_date}\n"
             f"Status: {icon} {claim.approval_status}\n"
             f"Approver: {approver_name or claim.expense_approver or '-'}\n\n"
@@ -2329,6 +2411,63 @@ def handle_expense_claim_flow(doc, phone, message):
             return
 
         state["description"] = description
+        state["step"] = "currency"
+
+        set_state(
+            phone,
+            state
+        )
+
+        send_expense_currency_prompt(
+            doc,
+            phone,
+            state
+        )
+
+        return
+
+    # ========================================================
+    # CURRENCY
+    #
+    # Offered as an interactive list of the currencies enabled on the
+    # site, company currency first, but any Currency the site has is
+    # accepted when its code is typed - see expense_currency.py.
+    # ========================================================
+
+    if step == "currency":
+
+        from whatsapp_hr_bot import expense_currency
+
+        # Mutates the session rather than returning something used here:
+        # the amount step and the currency list both read
+        # state["company_currency"], and a session opened before that key
+        # existed has to pick it up somewhere. This step is the first
+        # place that writes the session back, so it is the cheapest one.
+        resolve_session_company_currency(state)
+
+        currency, candidates = expense_currency.resolve_currency(message)
+
+        if not currency:
+
+            if candidates:
+
+                send_text(
+                    doc,
+                    build_ambiguous_currency_text(candidates)
+                )
+
+                return
+
+            send_expense_currency_prompt(
+                doc,
+                phone,
+                state,
+                prefix="❌ I don't recognise that currency.\n\n"
+            )
+
+            return
+
+        state["currency"] = currency
         state["step"] = "amount"
 
         set_state(
@@ -2338,7 +2477,8 @@ def handle_expense_claim_flow(doc, phone, message):
 
         send_text(
             doc,
-            "Please enter the amount.\n\n"
+            f"Currency selected: {currency}\n\n"
+            f"Please enter the amount in {currency}.\n\n"
             "Example: 1500"
         )
 
@@ -2346,28 +2486,49 @@ def handle_expense_claim_flow(doc, phone, message):
 
     # ========================================================
     # AMOUNT
+    #
+    # Parsed together with an optional currency, so "1500",
+    # "USD 100" and "₹1500" all work and a currency named here
+    # overrides the one picked at the step above.
+    #
+    # Stored exactly as entered - the claim is raised in the
+    # employee's currency and nothing is converted, see
+    # expense_currency.py.
     # ========================================================
 
     if step == "amount":
 
-        try:
+        from whatsapp_hr_bot import expense_currency
 
-            amount = flt(message)
+        company_currency = resolve_session_company_currency(state)
+        selected_currency = state.get("currency") or company_currency
 
-        except Exception:
+        currency, amount, candidates = expense_currency.parse_amount(
+            message,
+            selected_currency
+        )
 
-            amount = 0
-
-        if amount <= 0:
+        if candidates:
 
             send_text(
                 doc,
-                "❌ Please enter a valid amount greater than 0.\n\n"
-                "Example: 1500"
+                build_ambiguous_currency_text(candidates)
             )
 
             return
 
+        if not currency or not amount or amount <= 0:
+
+            send_text(
+                doc,
+                "❌ Please enter a valid amount greater than 0.\n\n"
+                "Example: 1500\n"
+                f"Example: {selected_currency} 1500"
+            )
+
+            return
+
+        state["currency"] = currency
         state["amount"] = amount
         state["step"] = "remark"
 
@@ -2618,6 +2779,167 @@ def handle_expense_bill_file(file_doc):
 
 
 # ============================================================
+# EXPENSE CLAIM ACCOUNTING DEFAULTS
+# ============================================================
+
+def get_expense_claim_accounting_defaults(employee_doc):
+    """``(payable_account, cost_center)`` for a claim raised over WhatsApp.
+
+    The desk form fills both in for the user - the parent's Cost Center
+    through the field's own ``fetch_from`` on Company, the expense rows'
+    through client script (``set_child_cost_center`` in hrms' own
+    expense_claim.js), and the Payable Account through
+    ``fetch_from: company.default_expense_claim_payable_account``. A
+    server-side insert gets the two ``fetch_from`` ones for free and the
+    client-script one not at all.
+
+    That did not matter while every claim this app created had
+    ``grand_total`` 0, because HRMS skips ``make_gl_entries`` entirely
+    when nothing is sanctioned. Now that a claim carries its amount as
+    sanctioned (see the expense row built below), approving it books real
+    GL Entries - which need a Cost Center on each row and an account to
+    credit - so both have to be set here, from the same defaults the desk
+    form uses.
+
+    Falls back to ERPNext's own party account resolution for the payable
+    side when the company has no Default Expense Claim Payable Account:
+    that is where an Employee payable goes for every other ERPNext
+    document. Either value may still come back ``None`` on a company with
+    nothing configured; the claim is created regardless (Draft needs
+    neither) and ``expense_approval`` reports what is missing if the
+    approver then tries to approve it.
+    """
+
+    import erpnext
+
+    company = employee_doc.company
+
+    payable_account = frappe.get_cached_value(
+        "Company",
+        company,
+        "default_expense_claim_payable_account"
+    )
+
+    if not payable_account:
+
+        try:
+
+            from erpnext.accounts.party import get_party_account
+
+            payable_account = get_party_account(
+                "Employee",
+                employee_doc.name,
+                company
+            )
+
+        except Exception:
+
+            # Nothing configured to fall back to - leave it empty rather
+            # than guessing an account to post to.
+            payable_account = None
+
+    return payable_account, erpnext.get_default_cost_center(company)
+
+
+# ============================================================
+# EXPENSE CLAIM CURRENCY
+# ============================================================
+
+def get_session_company_currency(employee):
+    """Currency the employee's company keeps its books in.
+
+    Offered first at the currency step and used as the default when the
+    employee's amount names no currency of its own. It is *not* what the
+    claim is stored in - that is whatever they picked, unconverted (see
+    expense_currency.py).
+    """
+
+    from whatsapp_hr_bot import expense_currency
+
+    company = frappe.db.get_value(
+        "Employee",
+        employee,
+        "company"
+    )
+
+    return expense_currency.get_company_currency(company)
+
+
+def resolve_session_company_currency(state):
+    """``state["company_currency"]``, filled in if it is missing.
+
+    A session opened before this field existed carries no company
+    currency, and expiring those mid-claim would lose the employee's
+    answers - so it is resolved from the employee instead.
+    """
+
+    company_currency = state.get("company_currency")
+
+    if not company_currency:
+
+        company_currency = get_session_company_currency(
+            state.get("employee")
+        )
+
+        state["company_currency"] = company_currency
+
+    return company_currency
+
+
+def send_expense_currency_prompt(doc, phone, state, prefix=""):
+
+    from whatsapp_hr_bot import expense_currency
+
+    company_currency = resolve_session_company_currency(state)
+
+    set_state(
+        phone,
+        state
+    )
+
+    buttons = []
+
+    for code in expense_currency.get_currency_options(company_currency):
+
+        symbol = expense_currency.get_currency_symbol(code)
+
+        description = symbol or code
+
+        if code == company_currency:
+            description = f"{description} - company currency"
+
+        buttons.append(
+            {
+                "id": f"{expense_currency.CURRENCY_BUTTON_PREFIX}{code}",
+                "title": code[:20],
+                "description": description[:72]
+            }
+        )
+
+    send_interactive(
+        doc,
+        prefix
+        + "Please select the currency of this expense.\n\n"
+        + "The claim is recorded in the currency you pick, exactly as you "
+        "enter it.\n\n"
+        "You can also type a currency code, for example CAD.",
+        buttons
+    )
+
+
+def build_ambiguous_currency_text(candidates):
+    """A symbol like "$" is shared by USD, CAD, AUD, SGD and two dozen
+    more, so it can never be resolved on its own - ask for the code.
+    """
+
+    return (
+        "❌ That symbol is used by more than one currency.\n\n"
+        "Please reply with the currency code, for example: "
+        + ", ".join(candidates[:5])
+    )
+
+
+# ============================================================
 # EXPENSE CLAIM CONFIRMATION MESSAGE
 # ============================================================
 
@@ -2648,6 +2970,8 @@ def send_expense_claim_confirmation(doc, phone, state):
 
 def build_expense_claim_confirmation_message(state):
 
+    from whatsapp_hr_bot import expense_currency
+
     # frappe_whatsapp names inbound media after a random hash (its
     # utils/webhook.py), so the stored file name means nothing to the
     # employee - show the format they sent instead.
@@ -2664,12 +2988,19 @@ def build_expense_claim_confirmation_message(state):
 
         bill_label = "Not attached"
 
+    currency = state.get("currency") or state.get("company_currency")
+
+    amount = expense_currency.format_money(
+        state.get("amount"),
+        currency
+    )
+
     return (
         "Please confirm your expense claim:\n\n"
         f"Expense Type: {state.get('expense_type')}\n"
         f"Date: {state.get('expense_date')}\n"
         f"Description: {state.get('description')}\n"
-        f"Amount: {flt(state.get('amount')):g}\n"
+        f"Amount: {amount}\n"
         f"Remark: {state.get('remark')}\n"
         f"Bill/Receipt: {bill_label}\n\n"
         "Do you want to submit this claim?"
@@ -2745,11 +3076,32 @@ def process_expense_claim_confirmation(doc, phone, button_id):
 
         employee_name = employee_doc.employee_name
 
+        from whatsapp_hr_bot import expense_currency
+
         expense_type = state.get("expense_type")
         expense_date = getdate(state.get("expense_date"))
         description = state.get("description")
-        amount = flt(state.get("amount"))
         remark = state.get("remark")
+
+        # ----------------------------------------------------
+        # CURRENCY
+        #
+        # The amount goes onto the claim exactly as the employee entered
+        # it, in the currency they picked - nothing is converted.
+        # custom_expense_currency is what makes ERPNext render it that
+        # way: every Currency field on Expense Claim reads its currency
+        # from that field (the Property Setters in
+        # fixtures/property_setter.json), so Grand Total comes out in the
+        # same currency and the same amount. See expense_currency.py.
+        # ----------------------------------------------------
+
+        company_currency = expense_currency.get_company_currency(
+            employee_doc.company
+        )
+
+        currency = state.get("currency") or company_currency
+
+        amount = flt(state.get("amount"))
 
         # ----------------------------------------------------
         # Optional bill/receipt from BILL_STEP, copied into a
@@ -2783,6 +3135,10 @@ def process_expense_claim_confirmation(doc, phone, button_id):
         # button / HR's normal approval flow.
         # ====================================================
 
+        payable_account, cost_center = get_expense_claim_accounting_defaults(
+            employee_doc
+        )
+
         expense_claim = frappe.get_doc(
             {
                 "doctype": "Expense Claim",
@@ -2791,16 +3147,29 @@ def process_expense_claim_confirmation(doc, phone, button_id):
                 "company": employee_doc.company,
                 "department": employee_doc.department,
                 "expense_approver": employee_doc.expense_approver,
+                "payable_account": payable_account,
                 "posting_date": str(expense_date),
                 "approval_status": "Draft",
                 "remark": remark,
                 "custom_bill_attachment": bill_file_url,
+                "custom_expense_currency": currency,
                 "expenses": [
                     {
                         "expense_date": str(expense_date),
                         "expense_type": expense_type,
                         "description": description,
                         "amount": amount,
+                        # Same default the desk form applies the moment an
+                        # amount is typed (hrms' expense_claim.js sets
+                        # sanctioned_amount from amount). Inserting server
+                        # side skips that, and without it HRMS'
+                        # calculate_taxes - which computes grand_total as
+                        # sanctioned + taxes - advances - leaves
+                        # total_sanctioned_amount and grand_total at 0.
+                        # The Expense Approver can still reduce it before
+                        # approving, exactly as for a desk-created claim.
+                        "sanctioned_amount": amount,
+                        "cost_center": cost_center,
                     }
                 ],
             }
@@ -2825,6 +3194,7 @@ def process_expense_claim_confirmation(doc, phone, button_id):
 
         claim_name = expense_claim.name
         claimed_amount = flt(expense_claim.total_claimed_amount) or amount
+        grand_total = flt(expense_claim.grand_total) or claimed_amount
 
         # ====================================================
         # CLEAR SESSION
@@ -2841,7 +3211,8 @@ def process_expense_claim_confirmation(doc, phone, button_id):
             "✅ Expense claim submitted successfully!\n\n"
             f"Claim: {claim_name}\n"
             f"Expense Type: {expense_type}\n"
-            f"Amount: {claimed_amount:g}\n"
+            f"Amount: {expense_currency.format_money(claimed_amount, currency)}\n"
+            f"Grand Total: {expense_currency.format_money(grand_total, currency)}\n"
             f"Status: Draft\n\n"
             "Your claim has been created in HRMS and is awaiting "
             "approval."
@@ -3019,11 +3390,27 @@ def set_state(phone, state):
     if not phone:
         return
 
+    key = f"{STATE_PREFIX}{phone}"
+
     frappe.cache().set_value(
-        f"{STATE_PREFIX}{phone}",
+        key,
         state,
         expires_in_sec=SESSION_TIMEOUT
     )
+
+    # frappe.cache().get_value() remembers a *miss* in frappe.local.cache,
+    # and set_value() deliberately skips that process-local copy whenever
+    # expires_in_sec is given (frappe/utils/redis_wrapper.py). So a
+    # get_state() that found nothing earlier in the same request keeps
+    # returning None afterwards, however many times this writes the
+    # session - and the webhook runs in exactly that order whenever Meta
+    # delivers more than one message in a single POST (frappe_whatsapp's
+    # utils/webhook.py loops over them), or when a second doc event lands
+    # in the same request. Keep the local copy in step with Redis so a
+    # later read in the same request sees the session that was just
+    # written. clear_state's delete_value already drops the local copy.
+
+    frappe.local.cache[frappe.cache().make_key(key)] = state
 
 
 def get_state(phone):
@@ -3094,6 +3481,19 @@ def send_text(doc, message):
 # ============================================================
 
 def send_interactive(doc, message, buttons):
+    """Send ``buttons`` as an interactive reply.
+
+    ``buttons`` is the list every caller builds. It has to reach the
+    WhatsApp Message as a JSON *string*, not the list itself: the
+    doctype's before_insert (which is what actually calls Meta) copes with
+    either, but frappe's own ``get_valid_dict`` then refuses to write a
+    list into the field - "Value for Buttons cannot be a list" - and that
+    happens *after* the message has gone out. The insert rolls back, so
+    the message is delivered but never logged, and the exception aborts
+    whatever the handler was in the middle of doing. Encoding it here is
+    the same thing notify/engine.py's ``_build_send_fields`` does, for the
+    same reason.
+    """
 
     outgoing = frappe.get_doc(
         {
@@ -3102,7 +3502,39 @@ def send_interactive(doc, message, buttons):
             "to": doc.get("from"),
             "message": message,
             "content_type": "interactive",
-            "buttons": buttons,
+            "buttons": buttons if isinstance(buttons, str) else json.dumps(buttons),
+            "whatsapp_account": doc.get(
+                "whatsapp_account"
+            )
+        }
+    )
+
+    outgoing.insert(
+        ignore_permissions=True
+    )
+
+
+# ============================================================
+# SEND MEDIA (image / document)
+# ============================================================
+
+def send_media(doc, content_type, link, caption=None):
+    """Send a file already published at ``link`` as an image/document.
+
+    ``link`` has to be an absolute URL Meta's servers can fetch - the
+    caller builds it (see expense_attachment.get_bill_delivery_url).
+    Needed alongside send_interactive because WhatsApp's interactive
+    messages carry no attachment, so a bill travels as its own message.
+    """
+
+    outgoing = frappe.get_doc(
+        {
+            "doctype": "WhatsApp Message",
+            "type": "Outgoing",
+            "to": doc.get("from"),
+            "message": caption,
+            "content_type": content_type,
+            "attach": link,
             "whatsapp_account": doc.get(
                 "whatsapp_account"
             )

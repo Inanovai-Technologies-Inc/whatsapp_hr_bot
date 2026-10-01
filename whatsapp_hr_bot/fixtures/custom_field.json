@@ -213,5 +213,29 @@
   "insert_after": "custom_bill_proof_section",
   "allow_on_submit": 1,
   "description": "Upload the bill or receipt as proof. Allowed formats: PDF, JPG, JPEG, PNG."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Expense Claim-custom_expense_currency_section",
+  "dt": "Expense Claim",
+  "fieldname": "custom_expense_currency_section",
+  "label": "Expense Currency",
+  "fieldtype": "Section Break",
+  "insert_after": "custom_bill_attachment",
+  "collapsible": 0,
+  "description": "The currency this claim's amounts are in. Set from what the employee picked when the claim was raised over WhatsApp; a claim created any other way uses the company's default currency."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Expense Claim-custom_expense_currency",
+  "dt": "Expense Claim",
+  "fieldname": "custom_expense_currency",
+  "label": "Expense Currency",
+  "fieldtype": "Link",
+  "options": "Currency",
+  "insert_after": "custom_expense_currency_section",
+  "read_only": 1,
+  "allow_on_submit": 0,
+  "description": "Every amount on this claim - the expense rows, Total Claimed, Total Sanctioned and Grand Total - is in this currency, exactly as entered. Nothing is converted. Note for Accounts: an approved claim's GL Entries post these amounts against the company-currency payable and expense accounts, so a claim in another currency needs an exchange adjustment."
  }
 ]
